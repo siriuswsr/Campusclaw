@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CampusClaw — 登录</title>
+<style>
+  :root { --pkured: #94070A; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif;
+         background: #f5f5f7; display: flex; align-items: center; justify-content: center; height: 100vh; }
+  .card { background: #fff; border-radius: 10px; padding: 40px; width: 360px;
+          box-shadow: 0 2px 16px rgba(0,0,0,.08); border-top: 4px solid var(--pkured); }
+  h1 { margin: 0 0 6px; font-size: 22px; color: var(--pkured); }
+  .sub { color: #666; font-size: 13px; margin-bottom: 24px; }
+  label { display: block; font-size: 13px; color: #333; margin-bottom: 4px; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 9px 12px; border: 1px solid #d0d0d0; border-radius: 6px;
+    font-size: 14px; margin-bottom: 14px; outline: none;
+  }
+  input:focus { border-color: var(--pkured); }
+  button { width: 100%; padding: 10px; background: var(--pkured); color: #fff;
+           border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  button:hover { background: #7b0508; }
+  .error { background: #fdecea; border: 1px solid #e5c5c5; color: #7b0508;
+           border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>CampusClaw</h1>
+  <div class="sub">请登录以访问本班材料</div>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="post" action="{{ request.path }}">
+    <label>用户名</label>
+    <input type="text" name="username" autofocus required>
+    <label>密码</label>
+    <input type="password" name="password" required>
+    <button type="submit">登 录</button>
+  </form>
+</div>
+</body>
+</html>

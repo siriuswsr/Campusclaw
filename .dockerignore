@@ -1,0 +1,25 @@
+# Secrets — NEVER bake into image
+.env
+*.pem
+*.key
+
+# Runtime data (volume-mounted, shouldn't be in image)
+data/
+uploads/
+*.db
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Git
+.git/

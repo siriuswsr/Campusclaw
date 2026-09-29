@@ -1,0 +1,66 @@
+services:
+  mysql:
+    image: m.daocloud.io/docker.io/library/mysql:8.0
+    container_name: campusclaw-mysql
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=128M
+      - --sync-binlog=1
+      - --loose-ngram-token-size=2
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-root}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-campusclaw}"
+      MYSQL_USER: "${MYSQL_USER:-campus}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-campus}"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  qdrant:
+    image: m.daocloud.io/docker.io/qdrant/qdrant:latest
+    container_name: campusclaw-qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: campusclaw:latest
+    container_name: campusclaw-app
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: "${MYSQL_USER:-campus}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-campus}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-campusclaw}"
+      QDRANT_URL: http://qdrant:6333
+      EMBEDDING_URL: "${EMBEDDING_URL:-http://host.docker.internal:8001/v1}"
+      EMBEDDING_KEY: "${EMBEDDING_KEY:-sk-mock}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-text-embedding-3-small}"
+      EMBEDDING_DIM: "${EMBEDDING_DIM:-1536}"
+      QA_URL: "${QA_URL:-http://host.docker.internal:8001/v1}"
+      QA_KEY: "${QA_KEY:-sk-mock}"
+      QA_MODEL: "${QA_MODEL:-gpt-4o-mini}"
+      SECRET_KEY: "${SECRET_KEY:-campusclaw-dev-secret}"
+      SESSION_SECRET: "${SESSION_SECRET:-campusclaw-dev-secret}"
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - ./uploads:/app/uploads
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      - mysql
+      - qdrant
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  qdrant_data:

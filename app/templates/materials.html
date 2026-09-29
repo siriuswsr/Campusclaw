@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CampusClaw — 本班材料</title>
+<style>
+  :root { --pkured: #94070A; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; background: #f5f5f7; }
+  header { background: #fff; border-bottom: 1px solid #e5e5e5; padding: 14px 24px;
+           display: flex; justify-content: space-between; align-items: center; }
+  header h1 { margin: 0; font-size: 18px; color: var(--pkured); }
+  main { max-width: 960px; margin: 24px auto; padding: 0 24px; }
+  section { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 20px;
+            box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+  h2 { margin: 0 0 14px; font-size: 15px; border-bottom: 2px solid var(--pkured); padding-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 10px; background: #fafafa; color: var(--pkured); border-bottom: 2px solid var(--pkured); }
+  td { padding: 10px; border-bottom: 1px solid #eee; }
+  a { color: var(--pkured); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .empty { color: #999; padding: 20px; text-align: center; }
+  .msg { padding: 10px 14px; border-radius: 6px; font-size: 14px; margin-bottom: 14px; }
+  .msg.ok { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+  .msg.err { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+  form.upload { border-left: 3px solid var(--pkured); padding: 14px; }
+  form.upload label { display: block; font-size: 13px; color: #333; margin: 6px 0; }
+  form.upload input[type=text], form.upload input[type=file] {
+    width: 100%; padding: 8px; border: 1px solid #d0d0d0; border-radius: 4px; font-size: 14px;
+  }
+  form.upload button { padding: 9px 20px; background: var(--pkured); color: #fff; border: none;
+                        border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 8px; }
+  /* ---- 知识库检索区 ---- */
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tab { padding: 7px 18px; border: 1px solid #d0d0d0; background: #fafafa; border-radius: 6px;
+         cursor: pointer; font-size: 14px; color: #444; }
+  .tab.active { background: var(--pkured); color: #fff; border-color: var(--pkured); }
+  .srch-row { display: flex; gap: 8px; }
+  .srch-row input[type=text] { flex: 1; padding: 8px; border: 1px solid #d0d0d0; border-radius: 4px; font-size: 14px; }
+  .srch-row select { padding: 8px; border: 1px solid #d0d0d0; border-radius: 4px; font-size: 14px; background: #fff; }
+  .srch-row button { padding: 9px 20px; background: var(--pkured); color: #fff; border: none;
+                     border-radius: 4px; cursor: pointer; font-size: 14px; white-space: nowrap; }
+  .srch-row button:disabled { opacity: .6; cursor: default; }
+  #search-msg, #qa-msg { margin-top: 12px; }
+  .hit { border: 1px solid #eee; border-left: 3px solid var(--pkured); border-radius: 6px;
+         padding: 12px 14px; margin-top: 10px; }
+  .hit-title { font-size: 14px; font-weight: 600; }
+  .hit-meta { font-size: 12px; color: #888; margin: 4px 0 8px; }
+  .hit-excerpt { font-size: 13px; color: #333; white-space: pre-wrap; line-height: 1.55; }
+  .answer { font-size: 14px; line-height: 1.65; color: #222; white-space: pre-wrap;
+            background: #fcf7f7; border: 1px solid #efe1e1; border-radius: 6px; padding: 12px 14px; }
+  .cites { margin-top: 12px; }
+  .cites h3 { font-size: 13px; color: #666; margin: 0 0 8px; }
+  .cite { font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #eee; }
+  .cite .no { display: inline-block; min-width: 22px; color: var(--pkured); font-weight: 600; }
+  .cite .cm { color: #999; font-size: 12px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CampusClaw · 本班材料</h1>
+  <div style="font-size:13px;color:#666;">
+    {{ user.username }}
+    &nbsp;|&nbsp;<a href="{{ url_for('auth.logout') }}">退出登录</a>
+  </div>
+</header>
+
+<main>
+  {% if request.args.get('uploaded') %}
+  <div class="msg ok">上传成功{% if request.args.get('title') %}：{{ request.args.get('title') }}{% endif %}</div>
+  {% endif %}
+
+  <section id="kb">
+    <h2>知识库检索</h2>
+    <div class="tabs">
+      <button type="button" class="tab active" data-tab="search">检索</button>
+      <button type="button" class="tab" data-tab="qa">问答</button>
+    </div>
+
+    <div id="panel-search">
+      <div class="srch-row">
+        <input type="text" id="search-q" placeholder="输入查询内容，例如：分数的通分">
+        <select id="search-mode" title="检索模式">
+          <option value="hybrid" selected>hybrid</option>
+          <option value="keyword">keyword</option>
+          <option value="vector">vector</option>
+        </select>
+        <button type="button" id="search-btn">检 索</button>
+      </div>
+      <div id="search-msg" class="msg err" style="display:none;"></div>
+      <div id="search-results"></div>
+    </div>
+
+    <div id="panel-qa" style="display:none;">
+      <div class="srch-row">
+        <input type="text" id="qa-q" placeholder="就本班材料提问，例如：异分母分数相加之前要做什么">
+        <button type="button" id="qa-btn">提 问</button>
+      </div>
+      <div id="qa-msg" class="msg err" style="display:none;"></div>
+      <div id="qa-answer"></div>
+      <div id="qa-cites" class="cites"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>本班材料列表</h2>
+    {% if items %}
+    <table>
+      <thead><tr><th>标题</th><th>上传者</th><th>上传时间</th><th>操作</th></tr></thead>
+      <tbody>
+        {% for m in items %}
+        <tr>
+          <td>{{ m.title }}</td>
+          <td>{{ m.uploader_name }}</td>
+          <td>{{ m.created_at.strftime('%Y-%m-%d %H:%M:%S') if m.created_at else '' }}</td>
+          <td><a href="{{ url_for('materials.detail_page', mid=m.id) }}">查看 / 下载</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">暂无材料</div>
+    {% endif %}
+  </section>
+
+  {% if user.role == 'teacher' %}
+  <section>
+    <h2>上传新材料</h2>
+    <div id="upload-msg" class="msg err" style="display:none;"></div>
+    <form class="upload" id="upload-form" method="post" action="{{ url_for('materials.upload_api') }}" enctype="multipart/form-data">
+      <label>标题（可选，默认取文件名）</label>
+      <input type="text" name="title">
+      <label>文件（仅 .txt / .md）</label>
+      <input type="file" name="file" accept=".txt,.md" required>
+      <button type="submit">上 传</button>
+    </form>
+  </section>
+  {% endif %}
+</main>
+<script>
+(function () {
+  var form = document.getElementById('upload-form');
+  if (!form) return;
+  var listUrl = "{{ url_for('materials.list_page') }}";
+  var msg = document.getElementById('upload-msg');
+  var btn = form.querySelector('button[type="submit"]');
+
+  function fail(text) {
+    msg.textContent = text;
+    msg.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '上 传';
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    msg.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = '上传中…';
+    var fd = new FormData(form);
+    fetch(form.action, { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(function (r) {
+        return r.json().then(function (d) { return { ok: r.ok, data: d }; },
+                           function () { return { ok: r.ok, data: {} }; });
+      })
+      .then(function (res) {
+        if (res.ok && res.data && res.data.ok) {
+          var t = (fd.get('title') || '').trim();
+          location.href = listUrl + '?uploaded=1' + (t ? '&title=' + encodeURIComponent(t) : '');
+          return;
+        }
+        fail((res.data && res.data.error) || '上传失败，请重试');
+      })
+      .catch(function () { fail('网络错误，上传失败'); });
+  });
+
+  // 提示参数用完即清，避免刷新时重复提示
+  if (location.search.indexOf('uploaded=') !== -1) {
+    history.replaceState(null, '', listUrl);
+  }
+})();
+</script>
+<script>
+/* 知识库检索区 —— 仅做界面与请求编排；
+   过滤/排序/相似度/班级判定/降级全部由服务端负责，前端不携带任何班级或密钥参数。 */
+(function () {
+  var SEARCH_URL = "{{ url_for('search.search_api') }}";   // GET /api/search
+  var ASK_URL = "{{ url_for('qa.ask_api') }}";             // POST /api/ask
+  var OPEN_TPL = "{{ url_for('materials.download_api', mid=0) }}"; // /materials/api/0/download
+
+  function openUrl(mid) {
+    return OPEN_TPL.replace(/\/0\/download$/, '/' + mid + '/download');
+  }
+
+  function $(id) { return document.getElementById(id); }
+
+  function showMsg(el, text) {
+    if (!text) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  function busy(btn, on, label) {
+    btn.disabled = on;
+    btn.textContent = on ? label : btn.dataset.label;
+  }
+
+  // ---- tabs ----
+  var tabs = document.querySelectorAll('#kb .tab');
+  Array.prototype.forEach.call(tabs, function (btn) {
+    btn.addEventListener('click', function () {
+      Array.prototype.forEach.call(tabs, function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      var isSearch = btn.getAttribute('data-tab') === 'search';
+      $('panel-search').style.display = isSearch ? '' : 'none';
+      $('panel-qa').style.display = isSearch ? 'none' : '';
+    });
+  });
+
+  // ---- 检索 tab ----
+  function renderHits(hits) {
+    var box = $('search-results');
+    box.textContent = '';
+    if (!hits.length) {
+      var e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = '未找到相关材料';
+      box.appendChild(e);
+      return;
+    }
+    hits.forEach(function (h) {
+      var card = document.createElement('div');
+      card.className = 'hit';
+
+      var title = document.createElement('a');
+      title.className = 'hit-title';
+      title.href = openUrl(h.material_id);
+      title.target = '_blank';
+      title.rel = 'noopener';
+      title.textContent = h.material_title;
+
+      var meta = document.createElement('div');
+      meta.className = 'hit-meta';
+      meta.textContent = '切片 #' + h.chunk_index + ' · 字符区间 [' + h.char_start + ', ' + h.char_end + ')';
+
+      var ex = document.createElement('div');
+      ex.className = 'hit-excerpt';
+      ex.textContent = h.excerpt;
+
+      card.appendChild(title);
+      card.appendChild(meta);
+      card.appendChild(ex);
+      box.appendChild(card);
+    });
+  }
+
+  function doSearch() {
+    var q = $('search-q').value.trim();
+    var mode = $('search-mode').value;
+    var msg = $('search-msg');
+    if (!q) { showMsg(msg, '请输入查询内容'); $('search-results').textContent = ''; return; }
+    showMsg(msg, '');
+    var btn = $('search-btn');
+    busy(btn, true, '检索中…');
+
+    fetch(SEARCH_URL + '?q=' + encodeURIComponent(q) + '&mode=' + encodeURIComponent(mode),
+          { credentials: 'same-origin' })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return { status: r.status, data: d }; });
+      })
+      .then(function (res) {
+        busy(btn, false);
+        if (res.status === 503) {
+          showMsg(msg, mode === 'keyword' ? '服务暂不可用，请稍后重试' : '向量检索暂不可用，请改用关键字检索');
+          $('search-results').textContent = '';
+          return;
+        }
+        if (res.status === 400) { showMsg(msg, '请输入查询内容'); return; }
+        if (res.status !== 200) { showMsg(msg, '检索失败，请稍后重试'); return; }
+        renderHits((res.data && res.data.hits) || []);
+      })
+      .catch(function () {
+        busy(btn, false);
+        showMsg(msg, '网络错误，检索失败');
+      });
+  }
+
+  // ---- 问答 tab ----
+  function renderAnswer(text) {
+    var box = $('qa-answer');
+    box.textContent = '';
+    if (!text) return;
+    var d = document.createElement('div');
+    d.className = 'answer';
+    d.textContent = text;
+    box.appendChild(d);
+  }
+
+  function renderCites(cites) {
+    var box = $('qa-cites');
+    box.textContent = '';
+    if (!cites.length) return;
+    var h = document.createElement('h3');
+    h.textContent = '出处（与回答中的 [n] 顺序一致）';
+    box.appendChild(h);
+    cites.forEach(function (c, i) {
+      var row = document.createElement('div');
+      row.className = 'cite';
+
+      var no = document.createElement('span');
+      no.className = 'no';
+      no.textContent = '[' + (i + 1) + ']';
+
+      var a = document.createElement('a');
+      a.href = openUrl(c.material_id);
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = c.material_title;
+
+      var meta = document.createElement('span');
+      meta.className = 'cm';
+      meta.textContent = '切片 #' + c.chunk_index + ' · 字符区间 [' + c.char_start + ', ' + c.char_end + ')';
+
+      row.appendChild(no);
+      row.appendChild(a);
+      row.appendChild(meta);
+      box.appendChild(row);
+    });
+  }
+
+  function doAsk() {
+    var q = $('qa-q').value.trim();
+    var msg = $('qa-msg');
+    if (!q) { showMsg(msg, '请输入查询内容'); renderAnswer(''); renderCites([]); return; }
+    showMsg(msg, '');
+    var btn = $('qa-btn');
+    busy(btn, true, '提问中…');
+
+    fetch(ASK_URL, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: q })      // 后端规约字段为 message
+    })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return { status: r.status, data: d }; });
+      })
+      .then(function (res) {
+        busy(btn, false);
+        var d = res.data || {};
+        if (res.status === 400) { showMsg(msg, '请输入查询内容'); return; }
+        if (res.status === 503) {
+          showMsg(msg, '向量检索暂不可用，请改用关键字检索');
+          renderAnswer(d.answer || '资料中未找到相关内容');
+          renderCites([]);
+          return;
+        }
+        if (res.status !== 200) { showMsg(msg, '提问失败，请稍后重试'); return; }
+        renderAnswer(d.answer || '资料中未找到相关内容');
+        renderCites(d.citations || []);
+      })
+      .catch(function () {
+        busy(btn, false);
+        showMsg(msg, '网络错误，提问失败');
+      });
+  }
+
+  // ---- wire up ----
+  var sb = $('search-btn'), qb = $('qa-btn');
+  if (!sb || !qb) return;
+  sb.dataset.label = sb.textContent;
+  qb.dataset.label = qb.textContent;
+  sb.addEventListener('click', doSearch);
+  qb.addEventListener('click', doAsk);
+  $('search-q').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
+  $('qa-q').addEventListener('keydown', function (e) { if (e.key === 'Enter') doAsk(); });
+})();
+</script>
+</body>
+</html>
