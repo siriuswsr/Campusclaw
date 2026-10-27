@@ -22,7 +22,7 @@
 
 ## T4 三种检索
 
-- [x] 4.1 keyword：仅查 MySQL 全文索引（class_id = 会话班级 AND index_status = 'ready'），不调用嵌入、不访问 Qdrant，按全文相关度排序 — verify: 原词检索有命中；停用 Qdrant 后 keyword 仍返回
+- [x] 4.1 keyword：仅查 MySQL 全文索引（class_id = 令牌载荷班级 AND index_status = 'ready'），不调用嵌入、不访问 Qdrant，按全文相关度排序 — verify: 原词检索有命中；停用 Qdrant 后 keyword 仍返回
 - [x] 4.2 vector：问句嵌入 → Qdrant 按 class_id 过滤 → 余弦 < 0.35 丢弃 → 主键回 MySQL 取正文（再次核对班级），按相似度排序 — verify: 余弦阈值与班级过滤已实测（原始候选 0.3007/0.0168 均被丢弃；回表按他班班级条件返回空）。注：课程 mock 网关为 bigram 哈希伪向量（非语义），无法构造「同义改写 keyword 落空但 vector 命中」的样例，该子项未能演示。
 - [x] 4.3 hybrid：同时执行两路，各路先独立过滤，再按名次 RRF（k=60）融合；缺席一路不贡献分数 — verify: 对同一问句比较 keyword/vector/hybrid 返回次序；两路均命中的切片在 hybrid 中排序更靠前；融合结果不是分数相加
 - [x] 4.4 空查询返回 400 — verify: 空问句请求返回 HTTP 400 且不触发嵌入/对话网关
@@ -30,9 +30,9 @@
 
 ## T5 检索侧班级隔离
 
-- [x] 5.1 class_id 仅从会话读取；查询字符串/JSON/Header 中携带的 class_id 解析后丢弃 — verify: A 班会话请求体写 B 班 class_id，检索结果仍按 A 班过滤
+- [x] 5.1 class_id 仅从服务端已校验的令牌身份读取；查询字符串/JSON/Header 中携带的 class_id 解析后丢弃 — verify: A 班 token 请求体写 B 班 class_id，检索结果仍按 A 班过滤
 - [x] 5.2 关键字与向量两条路径均带班级条件，回表时再次核对 — verify: 停用 Qdrant 单侧过滤场景下，回表班级约束仍排除他班记录
-- [x] 5.3 跨班检索对外表现为无命中（200 空 hits 或固定文案），不以 403/404 暗示资料归属 — verify: A 班检索仅存在于 B 班正文的词 → 200 空 hits；A 班会话打开 B 班材料详情与不存在同为 404
+- [x] 5.3 跨班检索对外表现为无命中（200 空 hits 或固定文案），不以 403/404 暗示资料归属 — verify: A 班检索仅存在于 B 班正文的词 → 200 空 hits；A 班 token 打开 B 班材料详情与不存在同为 404
 
 ## T6 问答接口 POST /api/ask
 

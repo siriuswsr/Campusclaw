@@ -3,7 +3,7 @@ What Changes
 切分：上传成功后（沿用第 3 课材料入库），将正文 body_text 按策略切分为切片写入 knowledge_chunks 表；提供 auto / custom / hierarchy 三种策略；未指定策略时按 auto 处理。
 嵌入与入库：每个切片调用嵌入网关转换为固定维度浮点向量；向量写入 Qdrant 集合 campusclaw_chunks（度量余弦），向量主键 = knowledge_chunks.id；payload 仅含若干标识、不含正文。
 三种检索：keyword（仅 MySQL 全文索引）、vector（问句嵌入 → Qdrant 按班过滤 → 余弦阈值 0.35 → 回表取正文）、hybrid（两路独立过滤后按名次 RRF k=60 融合）；默认 hybrid。
-检索侧班级隔离：class_id 仅从会话读取；关键字与向量两条路径都带班级条件，回表再核对；跨班检索对外表现为无命中。
+检索侧班级隔离：class_id 仅从服务端已校验的令牌身份（JWT 载荷）读取；关键字与向量两条路径都带班级条件，回表再核对；跨班检索对外表现为无命中。
 问答接口 POST /api/ask：本班混合检索取前 4 条切片；有命中才调用对话网关生成带 [n] 出处的简短回答；无命中直接返回「资料中未找到相关内容」，不调用生成模型。
 降级与健康：Qdrant 不可用时 keyword 仍可用，vector/hybrid 返回 503；空查询返回 400。
 Capabilities

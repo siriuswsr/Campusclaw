@@ -93,22 +93,32 @@ class QdrantStore:
     # --- search ---
 
     def search(self, query_vec: List[float], class_id: int,
-               top_k: int = 20, score_threshold: float = 0.35) -> List[dict]:
+               top_k: int = 20, score_threshold: float = 0.35,
+               material_ids: Optional[List[int]] = None) -> List[dict]:
         """Cosine search filtered by class_id payload. Skips candidates below threshold.
+
+        提示词 E：material_ids 非空时再加一层 payload.material_id ∈ [...] 过滤，
+        让「智能体绑定的材料」在向量路径上就收窄，而不是等回表才丢。
 
         Each result: {"chunk_id": int, "score": float, "payload": dict}
         Only returns Qdrant ids — caller joins back to MySQL to get chunk_text."""
+        must = [
+            self.models.FieldCondition(
+                key="class_id",
+                match=self.models.MatchValue(value=class_id),
+            )
+        ]
+        if material_ids:
+            must.append(self.models.FieldCondition(
+                key="material_id",
+                match=self.models.MatchAny(any=[int(x) for x in material_ids]),
+            ))
         results = self.client.search(
             collection_name=self.collection,
             query_vector=query_vec,
             limit=top_k,
             score_threshold=score_threshold,
-            query_filter=self.models.Filter(must=[
-                self.models.FieldCondition(
-                    key="class_id",
-                    match=self.models.MatchValue(value=class_id),
-                )
-            ]),
+            query_filter=self.models.Filter(must=must),
             with_payload=True,
         )
         return [{"chunk_id": r.id, "score": r.score, "payload": dict(r.payload or {})}

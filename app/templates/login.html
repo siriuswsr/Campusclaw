@@ -21,6 +21,7 @@
   button { width: 100%; padding: 10px; background: var(--pkured); color: #fff;
            border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
   button:hover { background: #7b0508; }
+  button:disabled { opacity: .6; cursor: default; }
   .error { background: #fdecea; border: 1px solid #e5c5c5; color: #7b0508;
            border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
 </style>
@@ -29,14 +30,68 @@
 <div class="card">
   <h1>CampusClaw</h1>
   <div class="sub">请登录以访问本班材料</div>
-  {% if error %}<div class="error">{{ error }}</div>{% endif %}
-  <form method="post" action="{{ request.path }}">
+  <div class="error" id="error" style="display:none;"></div>
+  <form id="login-form">
     <label>用户名</label>
-    <input type="text" name="username" autofocus required>
+    <input type="text" name="username" id="username" autofocus required>
     <label>密码</label>
-    <input type="password" name="password" required>
-    <button type="submit">登 录</button>
+    <input type="password" name="password" id="password" required>
+    <button type="submit" id="submit">登 录</button>
   </form>
 </div>
+<script src="{{ url_for('static', filename='auth.js') }}"></script>
+<script>
+/* Login is a JSON call to POST /api/login; the returned JWT + identity are kept
+   in localStorage (no session, no cookie). */
+(function () {
+  var LOGIN_API = "{{ url_for('auth_api.login_post') }}";
+  var LIST_PAGE = "{{ url_for('materials.list_page') }}";
+
+  // Already holding a token → the guard sends us straight to the list page.
+  if (CCAuth.token()) { location.replace(LIST_PAGE); return; }
+
+  var form = document.getElementById('login-form');
+  var err = document.getElementById('error');
+  var btn = document.getElementById('submit');
+
+  function fail(text) {
+    err.textContent = text;
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = '登 录';
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    err.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = '登录中…';
+
+    fetch(LOGIN_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value
+      })
+    })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; })
+          .then(function (d) { return { status: r.status, data: d }; });
+      })
+      .then(function (res) {
+        if (res.status === 200 && res.data && res.data.token) {
+          CCAuth.save(res.data);
+          location.replace(LIST_PAGE);
+          return;
+        }
+        if (res.status === 503) { fail('服务暂时不可用，请稍后重试'); return; }
+        fail('用户名或密码错误');
+      })
+      .catch(function () { fail('网络错误，登录失败'); });
+  });
+})();
+</script>
 </body>
 </html>

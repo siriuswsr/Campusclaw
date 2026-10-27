@@ -1,13 +1,28 @@
-"""Authentication routes and session helpers."""
+"""JWT authentication — token issuing, verification, request-scoped identity.
+
+There is NO Flask session anywhere: identity lives in the JWT carried by the
+`Authorization: Bearer <token>` header and is injected into `request.user` by
+@require_auth. Pages are client-rendered shells (see app/static/auth.js) — the
+browser attaches the token to every /api call.
+"""
 import time
 import threading
 from functools import wraps
-from flask import Blueprint, request, session, redirect, url_for, jsonify, render_template
+
+import jwt
+from flask import Blueprint, request, jsonify, redirect, url_for, render_template
 
 from . import db
+from .config import Config
+from .openapi import doc
 from .security import verify_password
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+auth_api_bp = Blueprint("auth_api", __name__, url_prefix="/api")
+
+# Expired AND tampered/invalid tokens share one opaque body (no oracle for
+# attackers, one predictable contract for the client).
+TOKEN_ERROR = {"error": "token_expired"}
 
 
 # ---------------------------------------------------------------------------
@@ -38,48 +53,76 @@ def _record_attempt(ip: str, username: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Token helpers
 # ---------------------------------------------------------------------------
 
-def _is_json_request():
-    return (
-        "/api" in request.path
-        or request.headers.get("Accept", "").startswith("application/json")
-        or request.is_json
-    )
+def issue_token(user: dict) -> str:
+    """Sign an HS256 token: {user_id, role, class_id, exp:+24h timestamp}."""
+    payload = {
+        "user_id": user["id"],
+        "role": user["role"],
+        "class_id": user["class_id"],
+        "exp": int(time.time()) + Config.JWT_TTL_HOURS * 3600,
+    }
+    return jwt.encode(payload, Config.JWT_SECRET, algorithm=Config.JWT_ALGORITHM)
 
 
-def get_current_user():
-    """Return the logged-in user dict or None."""
-    uid = session.get("user_id")
-    if not uid:
+def _bearer_token():
+    header = request.headers.get("Authorization", "")
+    if not header.startswith("Bearer "):
         return None
-    try:
-        return db.get_user_by_id(uid)
-    except Exception:
-        return None
+    token = header[len("Bearer "):].strip()
+    return token or None
 
 
-def login_required(view):
-    """Decorator: redirect page requests to /login, return 401 for JSON API."""
+def require_auth(view):
+    """Decode the Bearer token, inject request.user; 401 otherwise.
+
+    Every failure mode (missing header, expired, tampered, wrong signature)
+    returns 401 {"error": "token_expired"} — see TOKEN_ERROR.
+    """
     @wraps(view)
     def wrapper(*args, **kwargs):
-        if not get_current_user():
-            if _is_json_request():
-                return jsonify({"error": "unauthorized"}), 401
-            return redirect(url_for("auth.login_page", next=request.path))
+        token = _bearer_token()
+        if not token:
+            return jsonify(TOKEN_ERROR), 401
+        try:
+            payload = jwt.decode(token, Config.JWT_SECRET,
+                                 algorithms=[Config.JWT_ALGORITHM])
+        except jwt.PyJWTError:
+            return jsonify(TOKEN_ERROR), 401
+        request.user = payload
         return view(*args, **kwargs)
     return wrapper
 
 
+def get_current_user():
+    """Normalized identity from the verified token — never from client input."""
+    payload = getattr(request, "user", None)
+    if not payload:
+        return None
+    user = {
+        "id": payload["user_id"],
+        "role": payload["role"],
+        "class_id": payload["class_id"],
+    }
+    # username is display-only: a DB hiccup must NOT invalidate a valid token
+    try:
+        row = db.get_user_by_id(payload["user_id"])
+        user["username"] = (row or {}).get("username")
+    except Exception:
+        user["username"] = None
+    return user
+
+
 def role_required(*allowed_roles):
-    """Decorator: 403 if current user's role is not in allowed_roles."""
+    """Decorator: 403 if the token's role is not in allowed_roles."""
     def decorator(view):
         @wraps(view)
         def wrapper(*args, **kwargs):
             user = get_current_user()
             if not user:
-                return jsonify({"error": "unauthorized"}), 401
+                return jsonify(TOKEN_ERROR), 401
             if user["role"] not in allowed_roles:
                 return jsonify({"error": "forbidden"}), 403
             return view(*args, **kwargs)
@@ -88,25 +131,46 @@ def role_required(*allowed_roles):
 
 
 # ---------------------------------------------------------------------------
-# Routes
+# Pages
 # ---------------------------------------------------------------------------
 
 @auth_bp.route("/login", methods=["GET"])
 def login_page():
-    if get_current_user():
-        return redirect(url_for("materials.list_page"))
+    """Login page shell. The client bounces to /materials when a token exists —
+    the server cannot know, since it never receives the localStorage token on
+    a plain browser navigation."""
     return render_template("login.html")
 
 
-@auth_bp.route("/login", methods=["POST"])
-def login_post():
-    """Authenticate user.
+@auth_bp.route("/logout", methods=["GET", "POST"])
+def logout_page():
+    """Nothing to clear server-side (no session): the client drops the token."""
+    return redirect(url_for("auth.login_page"))
 
-    Failure responses are uniform across:
-      - no such user
-      - wrong password
-      - rate-limited
-    All return 401 with identical body — no user enumeration.
+
+# ---------------------------------------------------------------------------
+# API
+# ---------------------------------------------------------------------------
+
+@doc(summary="登录", description="返回 JWT（HS256，24h）与用户信息；密码错误/用户不存在/被限流一律同构 401。",
+     tags=["auth"], security=False,
+     request_body={"schema": {"type": "object", "required": ["username", "password"],
+                              "properties": {"username": {"type": "string"},
+                                             "password": {"type": "string"}}}},
+     responses={
+         200: {"description": "OK", "schema": {"type": "object", "properties": {
+             "token": {"type": "string"},
+             "user": {"type": "object", "properties": {
+                 "id": {"type": "integer"}, "name": {"type": "string"},
+                 "role": {"type": "string"}, "class_id": {"type": "integer"}}}}}},
+         401: {"description": "凭证无效", "schema": {"$ref": "#/components/schemas/Error"}},
+     })
+@auth_api_bp.route("/login", methods=["POST"])
+def login_post():
+    """POST /api/login → {"token", "user"}.
+
+    Failure responses are uniform across no-such-user / wrong password /
+    rate-limited: 401 with an identical body — no user enumeration.
     """
     data = request.get_json(silent=True) or request.form.to_dict()
     username = (data.get("username") or "").strip()
@@ -115,51 +179,39 @@ def login_post():
 
     # --- Rate limit check ---
     if _is_rate_limited(client_ip, username):
-        if _is_json_request():
-            return jsonify({"error": "invalid credentials"}), 401
-        return render_template("login.html", error="用户名或密码错误"), 401
+        return jsonify({"error": "invalid credentials"}), 401
 
     # --- DB lookup ---
     try:
         user = db.get_user_by_username(username)
     except Exception:
-        # DB unavailable → 503 (NOT session invalidation)
+        # DB unavailable → 503 (a valid token, if any, stays valid)
         _record_attempt(client_ip, username)
-        if _is_json_request():
-            return jsonify({"error": "service unavailable"}), 503
-        return render_template("login.html", error="服务暂时不可用，请稍后重试"), 503
+        return jsonify({"error": "service unavailable"}), 503
 
     # --- Uniform failure response for both branches ---
     if user is None or not verify_password(password, user["password_hash"]):
         _record_attempt(client_ip, username)
-        if _is_json_request():
-            return jsonify({"error": "invalid credentials"}), 401
-        return render_template("login.html", error="用户名或密码错误"), 401
+        return jsonify({"error": "invalid credentials"}), 401
 
     # --- Success ---
     with _login_lock:
         _login_attempts.pop((client_ip, username), None)
 
-    session.clear()
-    session["user_id"] = user["id"]
-    session["role"] = user["role"]
-    session["class_id"] = user["class_id"]
-    session["username"] = user["username"]
-
-    next_url = request.args.get("next") or url_for("materials.list_page")
-    if _is_json_request():
-        return jsonify({"ok": True, "role": user["role"], "class_id": user["class_id"]}), 200
-    return redirect(next_url)
-
-
-@auth_bp.route("/logout", methods=["GET", "POST"])
-def logout():
-    session.clear()
-    return redirect(url_for("auth.login_page"))
+    return jsonify({
+        "token": issue_token(user),
+        "user": {
+            "id": user["id"],
+            "name": user["username"],
+            "role": user["role"],
+            "class_id": user["class_id"],
+        },
+    }), 200
 
 
+@auth_api_bp.route("/me", methods=["GET"])
 @auth_bp.route("/me", methods=["GET"])
-@login_required
+@require_auth
 def me():
     user = get_current_user()
     return jsonify({
@@ -168,3 +220,9 @@ def me():
         "role": user["role"],
         "class_id": user["class_id"],
     })
+
+
+@auth_api_bp.route("/logout", methods=["GET", "POST"])
+def logout_api():
+    """Token is stateless — logout is purely client-side (drop localStorage)."""
+    return jsonify({"ok": True}), 200

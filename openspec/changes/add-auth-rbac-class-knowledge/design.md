@@ -24,15 +24,21 @@ Greenfield 项目，仓库当前仅有 OpenSpec 脚手架，无既有代码或�
 
 **备选**：FastAPI + PostgreSQL + MinIO（更贴近生产，但组件多、部署重）；Django（自带 admin 与 ORM，但偏离 Flask 选型且偏重）。
 
-### D2. 会话管理：Flask-Login + 服务端 signed session
+### D2. 身份承载：JWT 无状态令牌（Bearer）
 
-**选择**：使用 Flask-Login 管理用户会话，会话状态存于 Flask signed session cookie（由 `SECRET_KEY` 签名），客户端无法伪造。
+**选择**：登录成功后由服务端签发 HS256 JWT，客户端保存在 `localStorage`，此后每个 API 请求以 `Authorization: Bearer <token>` 携带；服务端用 `@require_auth` 解码并把载荷注入 `request.user`。**不使用任何 Flask session / signed cookie**（`app.secret_key` 已移除，登录响应不携带 `Set-Cookie`）。
 
-**理由**：Flask-Login 是 Flask 生态标准方案，提供 `login_user` / `logout_user` / `current_user` / `@login_required` 等原语；signed cookie 无需服务端会话存储，部署简单。`SECRET_KEY` 从环境变量读取，缺失则拒绝启动。
+**理由**：令牌自带 `role` 与 `class_id`，服务端无需会话存储即可完成身份与班级判定；无 cookie 意味着无 CSRF 面，跨端（浏览器 / 脚本 / 验收）行为一致。
 
-**备选**：JWT 无状态令牌（需自行实现依赖注入，Flask 生态不如 FastAPI 顺手）；服务端 Redis 会话（多一个组件）。
+**备选**：Flask-Login + 服务端 signed session cookie（本项目**不采用**：绑定浏览器 cookie，脚本化验收需另行处理，且需 CSRF 防护）；服务端 Redis 会话（多一个组件，仍是有状态）。
 
-**会话生命周期**：默认 1 天过期，可通过 `REMEMBER_COOKIE_DURATION` 配置；登出调用 `logout_user()` 清除会话。
+**令牌规格**：
+- 载荷：`{"user_id": <用户ID>, "role": "student"|"teacher", "class_id": <班级ID>, "exp": <签发时间 + 24h 的整数时间戳>}`
+- 算法 HS256；密钥从环境变量 `JWT_SECRET` 读取，缺失则拒绝启动
+- 校验失败、缺失、过期、篡改 一律返回 `401 {"error": "token_expired"}`（不区分具体原因，避免给攻击者 oracle）
+- 登录失败（账号不存在 / 口令错误 / 被限流）统一返回 `401 {"error": "invalid credentials"}`，不泄露账号是否存在
+
+**登出**：令牌无状态，登出即客户端清除 `localStorage` 中的 token 与 user；服务端不需要（也无法）删除令牌。
 
 ### D3. 密码哈希：bcrypt（flask-bcrypt 或 passlib[bcrypt]）
 
@@ -68,20 +74,23 @@ Greenfield 项目，仓库当前仅有 OpenSpec 脚手架，无既有代码或�
 
 **备选**：SQLite 无内置行级安全策略（RLS），应用层强制过滤是唯一可行方案。
 
-### D6. RBAC：Flask-Login + 自定义角色装饰器
+### D6. RBAC：`@require_auth` + 自定义角色装饰器
 
-**选择**：在 `@login_required` 基础上增加 `@role_required('teacher')` 装饰器，路由组合使用。
+**选择**：在令牌校验装饰器 `@require_auth` 基础上增加 `@role_required('teacher')` 装饰器，路由组合使用。
 
 **理由**：角色仅教师/学生两种，自定义装饰器十几行即可覆盖；不引入 Casbin 等 RBAC 库（过度设计）。
 
 **实现**：
 ```python
-def role_required(role):
+def role_required(*allowed_roles):
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            if current_user.role != role:
-                abort(403)
+            user = get_current_user()          # 取自 request.user（令牌载荷）
+            if not user:
+                return jsonify(TOKEN_ERROR), 401
+            if user["role"] not in allowed_roles:
+                return jsonify({"error": "forbidden"}), 403
             return fn(*args, **kwargs)
         return wrapper
     return decorator
@@ -95,26 +104,26 @@ def role_required(role):
 教师客户端
   │  POST /materials (multipart/form-data: file, title)
   ▼
-[Flask 路由] ──@login_required + @role_required('teacher')──► 403 if student
+[Flask 路由] ──@require_auth + @role_required('teacher')──► 403 if student
   │
   ▼
 [材料服务]
   ├─ 生成 uuid 文件名
   ├─ 保存文件到 UPLOAD_DIR/<uuid>.<ext>
-  ├─ 写入 materials 表 (title, class_id=current_user.class_id,
+  ├─ 写入 materials 表 (title, class_id=令牌载荷的 class_id,
   │                      uploader_id, file_path, created_at)
   └─ 返回 material_id
   │
   ▼
 本班列表查询 GET /materials
   └─ SELECT * FROM materials WHERE class_id = ? ORDER BY created_at DESC
-     （class_id 来自 current_user，客户端不可覆盖）
+     （class_id 来自 Bearer 令牌载荷，客户端不可覆盖）
 ```
 
 **关键点**：
-- `class_id` 取自 `current_user.class_id`，绝不从请求参数读取
+- `class_id` 取自 `get_current_user()["class_id"]`（即 `request.user` 的令牌载荷），绝不从请求参数读取
 - 文件保存与 DB 写入在同一逻辑单元；若 DB 写入失败则删除已存文件（补偿）
-- 下载端点 `GET /materials/<id>/download`：先按 `(id, current_user.class_id)` 查元数据，查不到 404；查到后用 `send_file` 返回文件流
+- 下载端点 `GET /materials/<id>/download`：先按 `(id, 令牌载荷的 class_id)` 查元数据，查不到 404；查到后用 `send_file` 返回文件流
 
 ### D8. Docker Compose 编排 + 健康探针
 
@@ -122,7 +131,7 @@ def role_required(role):
 
 **理由**：SQLite 与磁盘文件无需独立容器，Compose 仅需编排应用服务本身；健康探针复用 `service-health` capability 的端点。
 
-**配置加载**：`python-dotenv` 从 `.env` 读配置（`SECRET_KEY`、`DATABASE_PATH`、`UPLOAD_DIR`），`.env` gitignored，`.env.example` 入库；启动时校验 `SECRET_KEY` 存在，缺失即拒绝启动。
+**配置加载**：`python-dotenv` 从 `.env` 读配置（`JWT_SECRET`、`DATABASE_PATH`、`UPLOAD_DIR`），`.env` gitignored，`.env.example` 入库；启动时校验 `JWT_SECRET` 存在，缺失即拒绝启动。
 
 ### D9. 目录结构
 
@@ -158,9 +167,9 @@ requirements.txt
 
 - **[班级过滤被某条新查询遗忘]** → 材料服务层只暴露强制 `class_id` 的方法，不提供无过滤重载；集成测试断言“跨班访问 → 404”作为回归护栏；代码审查重点核对是否出现绕过服务直查 `Material` 的路径。
 - **[文件路径不带班级，存在越权下载风险]** → 下载必须先查元数据校验归属，再凭 file_path 读文件；禁止暴露静态文件目录的直接 HTTP 访问；测试覆盖跨班下载被拒。
-- **[密钥误入仓库]** → `.gitignore` 排除 `.env`；`config.py` 校验 `SECRET_KEY` 缺失即报错；种子脚本不硬编码明文密码。
+- **[密钥误入仓库]** → `.gitignore` 排除 `.env`；`config.py` 校验 `JWT_SECRET` 缺失即报错；种子脚本不硬编码明文密码。
 - **[SQLite 并发写入限制]** → 课程项目并发量低，SQLite 足够；若后续并发增长再迁 PostgreSQL，应用层通过 SQLAlchemy 抽象可平滑迁移。
-- **[signed cookie 会话在过期前不可服务端吊销]** → TTL 设为 1 天；登出清除客户端 cookie；若需即时吊销再加服务端会话黑名单（后续迭代）。
+- **[JWT 在过期前不可服务端吊销]** → TTL 设为 24 小时；登出由客户端清除 `localStorage` 中的 token 与 user；若需即时吊销再加服务端令牌黑名单（后续迭代）。
 - **[磁盘文件无冗余]** → Docker 卷持久化；定期备份卷即可；课程项目可接受。
 
 ## Migration Plan

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}CampusClaw — 讲义管理{% endblock %}
+
+{% block styles %}
+<style>
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: #555; margin-bottom: 6px; }
+  .field input[type=text], .field input[type=file], .field select {
+    width: 100%; padding: 9px 10px; border: 1px solid #d0d0d0; border-radius: 4px;
+    font-size: 14px; background: #fff;
+  }
+  .field .note { margin-top: 6px; font-size: 12px; color: #999; }
+  .row-right { display: flex; justify-content: flex-end; margin-top: 4px; }
+  .row-right .btn { padding: 9px 26px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 10px; background: #fafafa; color: var(--pkured); border-bottom: 2px solid var(--pkured); }
+  td { padding: 10px; border-bottom: 1px solid #eee; }
+  td a { color: var(--pkured); text-decoration: none; cursor: pointer; }
+  td a:hover { text-decoration: underline; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">讲义管理</h1>
+<p class="page-sub">上传本班讲义并管理其索引；材料列表与检索结果仅本班可见。</p>
+
+<div class="msg err" id="denied" style="display:none;">仅教师可访问本页</div>
+
+<div id="manage-body">
+  <section class="card" id="upload-card">
+    <h2>上传讲义</h2>
+    <div id="upload-msg" class="msg err" style="display:none;"></div>
+    <form id="upload-form" action="{{ url_for('materials.upload_api') }}" method="post" enctype="multipart/form-data">
+      <div class="field">
+        <label for="upload-title">标题</label>
+        <input type="text" id="upload-title" name="title" placeholder="留空则使用文件名">
+      </div>
+      <div class="field">
+        <label for="upload-subject">学科</label>
+        <select id="upload-subject" name="subject" required>
+          <option value="" selected disabled>请选择学科</option>
+          {% for s in SUBJECT_CHOICES %}
+          <option value="{{ s }}">{{ s }}</option>
+          {% endfor %}
+        </select>
+        <div class="note">学科必选，用于学生端按学科过滤讲义。</div>
+      </div>
+      <div class="field">
+        <label for="upload-file">文件</label>
+        <input type="file" id="upload-file" name="file" accept=".txt,.md">
+        <div class="note">仅支持 .txt / .md；文件名由服务端重命名，原始文件名不落盘。</div>
+      </div>
+      <div class="field">
+        <label for="upload-strategy">切片策略</label>
+        <select id="upload-strategy" name="strategy">
+          <option value="" selected>auto（默认）</option>
+          <option value="custom">custom</option>
+          <option value="hierarchy">hierarchy</option>
+        </select>
+      </div>
+      <div class="row-right">
+        <button type="submit" class="btn" id="upload-btn">上 传</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>本班讲义</h2>
+    <div id="list-msg" class="msg err" style="display:none;"></div>
+    <table id="mtable" style="display:none;">
+      <thead><tr><th>标题</th><th>学科</th><th>上传者</th><th>上传时间</th><th>操作</th></tr></thead>
+      <tbody id="mtbody"></tbody>
+    </table>
+    <div class="empty" id="mempty" style="display:none;">暂无材料</div>
+    <p class="hint">重新索引会删除该材料的旧切片与旧向量，再按所选策略重建。</p>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  if (!window.CCAuth || !CCAuth.guard()) { /* guard 已跳转 */ }
+  else if ((CCAuth.user() || {}).role !== 'teacher') {
+    document.getElementById('denied').style.display = 'block';
+    document.getElementById('manage-body').style.display = 'none';
+  }
+</script>
+<script>
+/* 学生页与教师页共用同一套列表/上传/索引逻辑，这里只注入差异。 */
+window.CC_MATERIALS_CFG = {
+  listApi:     "{{ url_for('materials.list_api') }}",
+  detailTpl:   "{{ url_for('materials.detail_page', mid=0) }}",
+  downloadTpl: "{{ url_for('materials.download_api', mid=0) }}",
+  reindexTpl:  "{{ url_for('materials.reindex_api', mid=0) }}",
+  canUpload:   true,
+  canReindex:  true,
+  filterSubjects: {{ SUBJECT_CHOICES | tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='materials.js') }}"></script>
+{% endblock %}

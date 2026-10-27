@@ -9,13 +9,13 @@ Spec constraints:
   - Client-supplied system message DISCARDED (service writes its own).
   - Citations order matches [1][2][3][4] in the answer.
   - NO streaming.
-  - class_id from session ONLY — request body class_id discarded.
+  - class_id from the JWT ONLY — request body class_id discarded.
 """
 from typing import List, Optional
 import requests
 from flask import Blueprint, request, jsonify
-from .auth import login_required, get_current_user
-from . import retrieval
+from .auth import require_auth, get_current_user
+from . import llm_traffic, retrieval
 from .retrieval import QdrantUnavailable
 from .config import Config
 
@@ -37,11 +37,11 @@ SYSTEM_PROMPT = (
 
 
 @qa_bp.route("/ask", methods=["POST"])
-@login_required
+@require_auth
 def ask_api():
     """POST /api/ask  body: {"message": str, "history": [...optional...], "system": <IGNORED>}"""
     user = get_current_user()
-    class_id = user["class_id"]  # session ONLY; any body class_id discarded
+    class_id = user["class_id"]  # JWT ONLY; any body class_id discarded
 
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
@@ -159,6 +159,10 @@ def _call_qa_gateway(messages: list) -> str:
         "temperature": 0.3,
         "max_tokens": 400,
     }
+    # 流量日志：请求体原样落盘（写失败不影响问答，见 llm_traffic）。
+    scene = llm_traffic.current_scene()
+    llm_traffic.log_request(scene, "POST", url, body)
+
     try:
         resp = requests.post(url, headers=headers, json=body, timeout=30)
     except Exception as e:
@@ -174,4 +178,5 @@ def _call_qa_gateway(messages: list) -> str:
     content = (choices[0].get("message", {}).get("content") or "").strip()
     if not content:
         raise QaGatewayUnavailable("qa gateway returned empty content")
+    llm_traffic.log_response(scene, content)
     return content

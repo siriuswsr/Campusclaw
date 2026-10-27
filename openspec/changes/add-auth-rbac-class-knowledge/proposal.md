@@ -12,6 +12,13 @@
 - 密码必须哈希存储，禁止明文；密钥仅放服务端环境变量，不进代码库
 - 启动方式采用 Docker Compose；应用提供 `GET /health` 健康检查端点
 
+- 用户登录方式改为 Token 鉴权：
+  - POST /api/login 验证账号密码后返回 {"token": "eyJ...", "user": {"id":..., "role":..., "class_id":...}}
+  - token 采用 JWT（HS256），载荷含 user_id / role / class_id / exp
+  - 后续请求在 Authorization: Bearer <token> 头中携带 token
+  - 客户端登录后将 token 写入 localStorage，登出时删除
+  - 密钥仅存服务端环境变量 JWT_SECRET
+
 ## Non-Goals
 
 本课范围明确不做以下内容（后续迭代再考虑）：
@@ -31,7 +38,7 @@
 
 ### New Capabilities
 
-- `user-auth`: 用户登录（账号密码）、角色区分（教师/学生）、密码哈希存储、会话管理、未登录访问受保护页面跳转登录页、预置班级/用户/材料数据
+- `user-auth`: 用户登录（账号密码校验后签发 JWT）、角色区分（教师/学生）、密码哈希存储、Bearer token 身份承载（无 session/cookie）、未登录访问受保护页面引导登录页、预置班级/用户/材料数据
 - `class-materials`: 教学材料的班级隔离存储——教师上传至知识库（磁盘文件 + SQLite 元数据）、本班材料列表查询、服务端强制班级过滤、跨班访问拒绝、学生上传拒绝、上传后本班列表可查
 - `service-health`: 应用健康检查端点 `GET /health`，返回应用及关键依赖（数据库、文件存储）连通状态，供 Docker Compose 与运维监控使用
 
@@ -42,8 +49,8 @@
 ## Impact
 
 - 新增代码：Flask 应用（认证路由、材料路由、中间件、DB 模型、文件存储客户端、健康检查端点）
-- 新增依赖：Flask、Flask-SQLAlchemy、Flask-Login、bcrypt（或 werkzeug.security）、python-dotenv、pytest
+- 新增依赖：Flask、PyJWT、bcrypt（或 werkzeug.security）、python-dotenv、pytest
 - 新增基础设施：SQLite（单文件数据库，随容器卷持久化）、文件存储目录（挂载卷）
-- 新增配置：环境变量承载密钥与路径信息（`SECRET_KEY`、`DATABASE_PATH`、`UPLOAD_DIR` 等）；提供 `.env.example` 模板，真实密钥不入库
+- 新增配置：环境变量承载密钥与路径信息（`JWT_SECRET`、`DATABASE_PATH`、`UPLOAD_DIR` 等）；提供 `.env.example` 模板，真实密钥不入库
 - 新增端点：`POST /auth/login`、`GET /auth/logout`、`GET /auth/me`、`POST /materials`（教师）、`GET /materials`（按班级过滤）、`GET /materials/<id>`、`GET /materials/<id>/download`、`GET /health`
 - 新增种子数据：启动时初始化班级、教师/学生账号（密码哈希入库）、示例材料

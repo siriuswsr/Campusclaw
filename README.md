@@ -7,7 +7,7 @@
 ## 快速启动
 
 ```bash
-cp .env.example .env          # 填入 SECRET_KEY（随意长串即可，不要提交真实密钥）
+cp .env.example .env          # 填入 JWT_SECRET（随意长串即可，不要提交真实密钥）
 docker compose up --build     # 一键构建并启动
 ```
 
@@ -25,10 +25,11 @@ docker compose up --build     # 一键构建并启动
 
 - **跨班访问统一返回 404**（与「记录不存在」同构响应，避免枚举）。
 - **密码以 bcrypt 加盐慢哈希存储**（`$2b$` 前缀），禁止明文。
-- **SECRET_KEY 仅从环境变量读取**，缺失即启动失败，无内置默认值。
+- **JWT_SECRET 仅从环境变量读取**，缺失即启动失败，无内置默认值。
 - **上传目录扁平存储** `uploads/<uuid>_<filename>`，class_id 仅在 DB 元数据中维护，不写入文件路径。
+- **认证方式为 JWT Bearer token**：`POST /api/login` 返回 `{"token","user"}`，后续请求带 `Authorization: Bearer <token>`；客户端存 `sessionStorage`（关闭标签页即失效，每次重新打开都需登录）。**不使用 Flask session / cookie**（登录响应无 `Set-Cookie`）。
 - **账号不存在与口令错误对外同构响应**，不返回 429 或区分性提示；限流仅记日志。
-- **GET /health 仅做进程存活判定**，不查询数据库；数据库故障时业务接口返回 503（会话仍有效）。
+- **GET /health 仅做进程存活判定**，不查询数据库；数据库故障时业务接口返回 503（已签发的 token 仍有效）。
 
 ## 运行
 
@@ -40,6 +41,6 @@ docker compose up --build     # 一键构建并启动
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env && 填入 SECRET_KEY
+cp .env.example .env && 填入 JWT_SECRET
 python -m flask run --port 8080
 ```

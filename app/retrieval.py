@@ -1,7 +1,8 @@
 """Retrieval module — keyword / vector / hybrid (RRF).
 
-Class isolation: class_id ALWAYS from session; caller-supplied query/header/JSON
-class_id is IGNORED. MySQL and Qdrant are both filtered BY session class_id.
+Class isolation: class_id ALWAYS from the JWT (request.user); caller-supplied
+query/header/JSON class_id is IGNORED. MySQL and Qdrant are both filtered BY the
+JWT class_id.
 
 Spec notes:
   - Qdrant unavailable → keyword still works; vector/hybrid MUST return 503 (no fake scores).
@@ -67,33 +68,49 @@ class SearchResult:
 # Public search entry — called only by search route (which enforces @login_required)
 # ---------------------------------------------------------------------------
 
-def search(mode: str, query: str, class_id: int, top_k: int = 20) -> SearchResult:
+def search(mode: str, query: str, class_id: int, top_k: int = 20,
+           material_ids: Optional[List[int]] = None,
+           subject_keyword: Optional[str] = None) -> SearchResult:
     """Dispatch; handles Qdrant / MySQL failures per spec.
 
-    class_id MUST come from session — this function does NOT read from request.
+    class_id MUST come from the JWT — this function does NOT read from request.
+
+    提示词 E：material_ids 非空时只在「智能体绑定的材料」范围内检索（空/None =
+    全班）；subject_keyword 非空时再按 materials.subject 收窄（技能自带的学科词）。
     """
     if mode not in ("keyword", "vector", "hybrid"):
         raise ValueError(f"invalid mode: {mode}")
 
     if mode == "keyword":
-        return _keyword_only(query, class_id, top_k)
+        return _keyword_only(query, class_id, top_k, material_ids, subject_keyword)
     if mode == "vector":
-        return _vector_only(query, class_id, top_k)
+        return _vector_only(query, class_id, top_k, material_ids, subject_keyword)
     # hybrid
-    return _hybrid(query, class_id, top_k)
+    return _hybrid(query, class_id, top_k, material_ids, subject_keyword)
+
+
+def retrieve(query: str, class_id: int, material_ids: Optional[List[int]] = None,
+             subject_keyword: Optional[str] = None, top_k: int = 4) -> SearchResult:
+    """编排层的检索入口（提示词 E）——默认 hybrid，返回 top_k（默认 4）条。"""
+    return search("hybrid", query, class_id, top_k=top_k,
+                  material_ids=material_ids, subject_keyword=subject_keyword)
 
 
 # ---------------------------------------------------------------------------
 # Path implementations
 # ---------------------------------------------------------------------------
 
-def _keyword_only(query: str, class_id: int, top_k: int) -> SearchResult:
+def _keyword_only(query: str, class_id: int, top_k: int,
+                  material_ids: Optional[List[int]] = None,
+                  subject_keyword: Optional[str] = None) -> SearchResult:
     """MySQL FULLTEXT ngram ONLY. No embed, no Qdrant.
 
     Empty/too-short queries → return empty hits cleanly (caller already
     validated non-empty at the route level, but MySQL may return no results)."""
     try:
-        rows = db.keyword_search(query, class_id, top_k)
+        rows = db.keyword_search(query, class_id, top_k,
+                                 material_ids=material_ids,
+                                 subject_keyword=subject_keyword)
     except Exception:
         # MySQL failure → not our problem (caller wraps in 503 at route level)
         raise
@@ -114,7 +131,9 @@ def _keyword_only(query: str, class_id: int, top_k: int) -> SearchResult:
     return SearchResult(hits=hits, mode="keyword", total=len(hits))
 
 
-def _vector_only(query: str, class_id: int, top_k: int) -> SearchResult:
+def _vector_only(query: str, class_id: int, top_k: int,
+                 material_ids: Optional[List[int]] = None,
+                 subject_keyword: Optional[str] = None) -> SearchResult:
     """Embed query → Qdrant class_id filter → 0.35 threshold → 回表核班级."""
     from .embed import EmbedClient
     from .qdrant_store import QdrantStore
@@ -127,17 +146,20 @@ def _vector_only(query: str, class_id: int, top_k: int) -> SearchResult:
     try:
         store = QdrantStore()
         q_results = store.search(qvec, class_id, top_k=top_k,
-                                 score_threshold=Config.VECTOR_SCORE_THRESHOLD)
+                                 score_threshold=Config.VECTOR_SCORE_THRESHOLD,
+                                 material_ids=material_ids)
     except Exception as e:
         raise QdrantUnavailable(f"qdrant unreachable: {e}")
 
     if not q_results:
         return SearchResult(hits=[], mode="vector", total=0)
 
-    # 回表 — re-filter class_id (spec line 87 safety belt)
+    # 回表 — re-filter class_id (spec line 87 safety belt) + 班级内材料/学科收窄
     chunk_ids = [r["chunk_id"] for r in q_results]
     try:
-        rows = db.get_chunks_by_ids_and_class(chunk_ids, class_id)
+        rows = db.get_chunks_by_ids_and_class(chunk_ids, class_id,
+                                              material_ids=material_ids,
+                                              subject_keyword=subject_keyword)
     except Exception:
         raise
     rows_by_id = {int(r["id"]): r for r in rows}
@@ -166,13 +188,15 @@ class QdrantUnavailable(Exception):
     pass
 
 
-def _hybrid(query: str, class_id: int, top_k: int) -> SearchResult:
+def _hybrid(query: str, class_id: int, top_k: int,
+            material_ids: Optional[List[int]] = None,
+            subject_keyword: Optional[str] = None) -> SearchResult:
     """Run both paths; RRF merge (k=60). IF EITHER path fails (embed/Qdrant
     UNREACHABLE) this function raises QdrantUnavailable — spec line 142 says
     hybrid returns 503 when Qdrant is down. Hybrid is NOT degraded to keyword."""
-    keyword_hits = _keyword_path_for_hybrid(query, class_id, top_k)
+    keyword_hits = _keyword_path_for_hybrid(query, class_id, top_k, material_ids, subject_keyword)
     try:
-        vector_result = _vector_only(query, class_id, top_k)
+        vector_result = _vector_only(query, class_id, top_k, material_ids, subject_keyword)
         vector_hits = vector_result.hits
     except QdrantUnavailable:
         # spec line 142 — hybrid MUST return 503 when Qdrant is down
@@ -184,9 +208,11 @@ def _hybrid(query: str, class_id: int, top_k: int) -> SearchResult:
     return SearchResult(hits=merged, mode="hybrid", total=len(merged))
 
 
-def _keyword_path_for_hybrid(query: str, class_id: int, top_k: int) -> List[Hit]:
+def _keyword_path_for_hybrid(query: str, class_id: int, top_k: int,
+                             material_ids: Optional[List[int]] = None,
+                             subject_keyword: Optional[str] = None) -> List[Hit]:
     """Same as keyword_only but returns raw hits list for RRF consumption."""
-    result = _keyword_only(query, class_id, top_k)
+    result = _keyword_only(query, class_id, top_k, material_ids, subject_keyword)
     return result.hits
 
 

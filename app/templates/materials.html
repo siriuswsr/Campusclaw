@@ -1,36 +1,9 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>CampusClaw — 本班材料</title>
+{% extends "base.html" %}
+{% block title %}CampusClaw — 讲义与检索{% endblock %}
+
+{% block styles %}
 <style>
-  :root { --pkured: #94070A; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; background: #f5f5f7; }
-  header { background: #fff; border-bottom: 1px solid #e5e5e5; padding: 14px 24px;
-           display: flex; justify-content: space-between; align-items: center; }
-  header h1 { margin: 0; font-size: 18px; color: var(--pkured); }
-  main { max-width: 960px; margin: 24px auto; padding: 0 24px; }
-  section { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 20px;
-            box-shadow: 0 1px 6px rgba(0,0,0,.06); }
-  h2 { margin: 0 0 14px; font-size: 15px; border-bottom: 2px solid var(--pkured); padding-bottom: 6px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th { text-align: left; padding: 10px; background: #fafafa; color: var(--pkured); border-bottom: 2px solid var(--pkured); }
-  td { padding: 10px; border-bottom: 1px solid #eee; }
-  a { color: var(--pkured); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .empty { color: #999; padding: 20px; text-align: center; }
-  .msg { padding: 10px 14px; border-radius: 6px; font-size: 14px; margin-bottom: 14px; }
-  .msg.ok { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
-  .msg.err { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
-  form.upload { border-left: 3px solid var(--pkured); padding: 14px; }
-  form.upload label { display: block; font-size: 13px; color: #333; margin: 6px 0; }
-  form.upload input[type=text], form.upload input[type=file] {
-    width: 100%; padding: 8px; border: 1px solid #d0d0d0; border-radius: 4px; font-size: 14px;
-  }
-  form.upload button { padding: 9px 20px; background: var(--pkured); color: #fff; border: none;
-                        border-radius: 4px; cursor: pointer; font-size: 14px; margin-top: 8px; }
-  /* ---- 知识库检索区 ---- */
+  /* ---- 检索 / 问答 tab ---- */
   .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
   .tab { padding: 7px 18px; border: 1px solid #d0d0d0; background: #fafafa; border-radius: 6px;
          cursor: pointer; font-size: 14px; color: #444; }
@@ -54,136 +27,100 @@
   .cite { font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #eee; }
   .cite .no { display: inline-block; min-width: 22px; color: var(--pkured); font-weight: 600; }
   .cite .cm { color: #999; font-size: 12px; margin-left: 6px; }
+
+  /* ---- 学科过滤 chips ---- */
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chips .chip { padding: 5px 14px; border: 1px solid #d0d0d0; background: #fafafa;
+                 border-radius: 16px; font-size: 13px; color: #444; cursor: pointer; }
+  .chips .chip.active { background: var(--pkured); color: #fff; border-color: var(--pkured); }
+
+  /* ---- 本班材料列表 ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 10px; background: #fafafa; color: var(--pkured); border-bottom: 2px solid var(--pkured); }
+  td { padding: 10px; border-bottom: 1px solid #eee; }
+  td a { color: var(--pkured); text-decoration: none; }
+  td a:hover { text-decoration: underline; }
 </style>
-</head>
-<body>
-<header>
-  <h1>CampusClaw · 本班材料</h1>
-  <div style="font-size:13px;color:#666;">
-    {{ user.username }}
-    &nbsp;|&nbsp;<a href="{{ url_for('auth.logout') }}">退出登录</a>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">讲义与检索</h1>
+<p class="page-sub">在本班知识库中检索，结果会标注来源（讲义名与位置）。</p>
+
+<div class="msg ok" id="teacher-tip" style="display:none;">
+  上传与索引管理请前往左侧「讲义管理」。
+</div>
+
+<section class="card" id="kb">
+  <h2>知识库检索</h2>
+  <div class="tabs">
+    <button type="button" class="tab active" data-tab="search">检索</button>
+    <button type="button" class="tab" data-tab="qa">问答</button>
   </div>
-</header>
 
-<main>
-  {% if request.args.get('uploaded') %}
-  <div class="msg ok">上传成功{% if request.args.get('title') %}：{{ request.args.get('title') }}{% endif %}</div>
-  {% endif %}
-
-  <section id="kb">
-    <h2>知识库检索</h2>
-    <div class="tabs">
-      <button type="button" class="tab active" data-tab="search">检索</button>
-      <button type="button" class="tab" data-tab="qa">问答</button>
+  <div id="panel-search">
+    <div class="srch-row">
+      <input type="text" id="search-q" placeholder="输入查询内容，例如：分数的通分">
+      <select id="search-mode" title="检索模式">
+        <option value="hybrid" selected>hybrid</option>
+        <option value="keyword">keyword</option>
+        <option value="vector">vector</option>
+      </select>
+      <button type="button" id="search-btn">检 索</button>
     </div>
+    <div id="search-msg" class="msg err" style="display:none;"></div>
+    <div id="search-results"></div>
+  </div>
 
-    <div id="panel-search">
-      <div class="srch-row">
-        <input type="text" id="search-q" placeholder="输入查询内容，例如：分数的通分">
-        <select id="search-mode" title="检索模式">
-          <option value="hybrid" selected>hybrid</option>
-          <option value="keyword">keyword</option>
-          <option value="vector">vector</option>
-        </select>
-        <button type="button" id="search-btn">检 索</button>
-      </div>
-      <div id="search-msg" class="msg err" style="display:none;"></div>
-      <div id="search-results"></div>
+  <div id="panel-qa" style="display:none;">
+    <div class="srch-row">
+      <input type="text" id="qa-q" placeholder="就本班材料提问，例如：异分母分数相加之前要做什么">
+      <button type="button" id="qa-btn">提 问</button>
     </div>
+    <div id="qa-msg" class="msg err" style="display:none;"></div>
+    <div id="qa-answer"></div>
+    <div id="qa-cites" class="cites"></div>
+  </div>
+</section>
 
-    <div id="panel-qa" style="display:none;">
-      <div class="srch-row">
-        <input type="text" id="qa-q" placeholder="就本班材料提问，例如：异分母分数相加之前要做什么">
-        <button type="button" id="qa-btn">提 问</button>
-      </div>
-      <div id="qa-msg" class="msg err" style="display:none;"></div>
-      <div id="qa-answer"></div>
-      <div id="qa-cites" class="cites"></div>
-    </div>
-  </section>
+<section class="card">
+  <h2>本班材料列表</h2>
+  <!-- 学科过滤条：点「全部」清掉 subject，点某个学科则请求带 ?subject=学科 -->
+  <div class="chips" id="subject-chips"></div>
+  <div id="list-msg" class="msg err" style="display:none;"></div>
+  <table id="mtable" style="display:none;">
+    <thead><tr><th>标题</th><th>学科</th><th>上传者</th><th>上传时间</th><th>操作</th></tr></thead>
+    <tbody id="mtbody"></tbody>
+  </table>
+  <div class="empty" id="mempty" style="display:none;">暂无材料</div>
+</section>
+{% endblock %}
 
-  <section>
-    <h2>本班材料列表</h2>
-    {% if items %}
-    <table>
-      <thead><tr><th>标题</th><th>上传者</th><th>上传时间</th><th>操作</th></tr></thead>
-      <tbody>
-        {% for m in items %}
-        <tr>
-          <td>{{ m.title }}</td>
-          <td>{{ m.uploader_name }}</td>
-          <td>{{ m.created_at.strftime('%Y-%m-%d %H:%M:%S') if m.created_at else '' }}</td>
-          <td><a href="{{ url_for('materials.detail_page', mid=m.id) }}">查看 / 下载</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div class="empty">暂无材料</div>
-    {% endif %}
-  </section>
-
-  {% if user.role == 'teacher' %}
-  <section>
-    <h2>上传新材料</h2>
-    <div id="upload-msg" class="msg err" style="display:none;"></div>
-    <form class="upload" id="upload-form" method="post" action="{{ url_for('materials.upload_api') }}" enctype="multipart/form-data">
-      <label>标题（可选，默认取文件名）</label>
-      <input type="text" name="title">
-      <label>文件（仅 .txt / .md）</label>
-      <input type="file" name="file" accept=".txt,.md" required>
-      <button type="submit">上 传</button>
-    </form>
-  </section>
-  {% endif %}
-</main>
+{% block scripts %}
 <script>
-(function () {
-  var form = document.getElementById('upload-form');
-  if (!form) return;
-  var listUrl = "{{ url_for('materials.list_page') }}";
-  var msg = document.getElementById('upload-msg');
-  var btn = form.querySelector('button[type="submit"]');
-
-  function fail(text) {
-    msg.textContent = text;
-    msg.style.display = 'block';
-    btn.disabled = false;
-    btn.textContent = '上 传';
+  // 教师落在本页（登录页写死了这个落地页）时，指路到讲义管理
+  if (window.CCAuth && CCAuth.guard() && (CCAuth.user() || {}).role === 'teacher') {
+    document.getElementById('teacher-tip').style.display = 'block';
   }
-
-  form.addEventListener('submit', function (e) {
-    e.preventDefault();
-    msg.style.display = 'none';
-    btn.disabled = true;
-    btn.textContent = '上传中…';
-    var fd = new FormData(form);
-    fetch(form.action, { method: 'POST', body: fd, credentials: 'same-origin' })
-      .then(function (r) {
-        return r.json().then(function (d) { return { ok: r.ok, data: d }; },
-                           function () { return { ok: r.ok, data: {} }; });
-      })
-      .then(function (res) {
-        if (res.ok && res.data && res.data.ok) {
-          var t = (fd.get('title') || '').trim();
-          location.href = listUrl + '?uploaded=1' + (t ? '&title=' + encodeURIComponent(t) : '');
-          return;
-        }
-        fail((res.data && res.data.error) || '上传失败，请重试');
-      })
-      .catch(function () { fail('网络错误，上传失败'); });
-  });
-
-  // 提示参数用完即清，避免刷新时重复提示
-  if (location.search.indexOf('uploaded=') !== -1) {
-    history.replaceState(null, '', listUrl);
-  }
-})();
 </script>
+<script>
+/* 列表/下载与学生页、教师页共用（app/static/materials.js）；
+   这里只注入差异：学生页没有上传表单，也不提供「重新索引」。 */
+window.CC_MATERIALS_CFG = {
+  listApi:     "{{ url_for('materials.list_api') }}",
+  detailTpl:   "{{ url_for('materials.detail_page', mid=0) }}",
+  downloadTpl: "{{ url_for('materials.download_api', mid=0) }}",
+  canUpload:   false,
+  canReindex:  false,
+  filterSubjects: {{ SUBJECT_CHOICES | tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='materials.js') }}"></script>
 <script>
 /* 知识库检索区 —— 仅做界面与请求编排；
    过滤/排序/相似度/班级判定/降级全部由服务端负责，前端不携带任何班级或密钥参数。 */
 (function () {
+  if (!CCAuth.guard()) return;
   var SEARCH_URL = "{{ url_for('search.search_api') }}";   // GET /api/search
   var ASK_URL = "{{ url_for('qa.ask_api') }}";             // POST /api/ask
   var OPEN_TPL = "{{ url_for('materials.download_api', mid=0) }}"; // /materials/api/0/download
@@ -203,6 +140,15 @@
   function busy(btn, on, label) {
     btn.disabled = on;
     btn.textContent = on ? label : btn.dataset.label;
+  }
+
+  // 打开材料：下载要走 Bearer 头，普通 <a href> 会拿不到 token
+  function openMaterial(mid, title) {
+    CCAuth.download(openUrl(mid), title || '')
+      .catch(function (e) {
+        if (String(e && e.message) === 'unauthorized') return;
+        alert('打开材料失败，请稍后重试');
+      });
   }
 
   // ---- tabs ----
@@ -234,10 +180,12 @@
 
       var title = document.createElement('a');
       title.className = 'hit-title';
-      title.href = openUrl(h.material_id);
-      title.target = '_blank';
-      title.rel = 'noopener';
+      title.href = '#';
       title.textContent = h.material_title;
+      title.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        openMaterial(h.material_id, h.material_title);
+      });
 
       var meta = document.createElement('div');
       meta.className = 'hit-meta';
@@ -263,8 +211,7 @@
     var btn = $('search-btn');
     busy(btn, true, '检索中…');
 
-    fetch(SEARCH_URL + '?q=' + encodeURIComponent(q) + '&mode=' + encodeURIComponent(mode),
-          { credentials: 'same-origin' })
+    CCAuth.authFetch(SEARCH_URL + '?q=' + encodeURIComponent(q) + '&mode=' + encodeURIComponent(mode))
       .then(function (r) {
         return r.json().catch(function () { return {}; })
           .then(function (d) { return { status: r.status, data: d }; });
@@ -280,8 +227,9 @@
         if (res.status !== 200) { showMsg(msg, '检索失败，请稍后重试'); return; }
         renderHits((res.data && res.data.hits) || []);
       })
-      .catch(function () {
+      .catch(function (e) {
         busy(btn, false);
+        if (String(e && e.message) === 'unauthorized') return;
         showMsg(msg, '网络错误，检索失败');
       });
   }
@@ -313,10 +261,12 @@
       no.textContent = '[' + (i + 1) + ']';
 
       var a = document.createElement('a');
-      a.href = openUrl(c.material_id);
-      a.target = '_blank';
-      a.rel = 'noopener';
+      a.href = '#';
       a.textContent = c.material_title;
+      a.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        openMaterial(c.material_id, c.material_title);
+      });
 
       var meta = document.createElement('span');
       meta.className = 'cm';
@@ -337,9 +287,8 @@
     var btn = $('qa-btn');
     busy(btn, true, '提问中…');
 
-    fetch(ASK_URL, {
+    CCAuth.authFetch(ASK_URL, {
       method: 'POST',
-      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: q })      // 后端规约字段为 message
     })
@@ -361,8 +310,9 @@
         renderAnswer(d.answer || '资料中未找到相关内容');
         renderCites(d.citations || []);
       })
-      .catch(function () {
+      .catch(function (e) {
         busy(btn, false);
+        if (String(e && e.message) === 'unauthorized') return;
         showMsg(msg, '网络错误，提问失败');
       });
   }
@@ -378,5 +328,4 @@
   $('qa-q').addEventListener('keydown', function (e) { if (e.key === 'Enter') doAsk(); });
 })();
 </script>
-</body>
-</html>
+{% endblock %}

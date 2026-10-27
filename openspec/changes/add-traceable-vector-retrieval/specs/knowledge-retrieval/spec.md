@@ -79,7 +79,7 @@
 - **AND** MUST NOT 调用嵌入服务
 - **AND** MUST NOT 访问 Qdrant
 - **AND** 仅检索 index_status = ready 的切片
-- **AND** WHERE 条件 MUST 包含 class_id = 会话班级
+- **AND** WHERE 条件 MUST 包含 class_id = 令牌载荷班级
 - **AND** 按全文相关度由高到低排序返回
 
 #### Scenario: vector 模式走嵌入与 Qdrant
@@ -89,7 +89,7 @@
 - **AND** Qdrant 查询 MUST 按 class_id 过滤
 - **AND** 余弦相似度低于 0.35 的候选 MUST 被丢弃
 - **AND** 命中后 MUST 以向量主键回 MySQL 取回切片正文
-- **AND** 回表查询 MUST 再次核对 class_id = 会话班级
+- **AND** 回表查询 MUST 再次核对 class_id = 令牌载荷班级
 - **AND** 按余弦相似度由高到低排序返回
 
 #### Scenario: hybrid 模式按名次 RRF 融合
@@ -109,19 +109,19 @@
 
 ### Requirement: 检索侧的班级隔离
 
-班级 MUST 仅从登录会话中读取。请求体、查询字符串或请求头中另行携带的 class_id MUST 在解析后被丢弃；前端隐藏入口 MUST NOT 作为满足本要求的唯一手段。
+班级 MUST 仅从服务端已校验的身份中读取——即 `Authorization: Bearer` 头里的 JWT 载荷（`@require_auth` 解码后注入 `request.user`），MUST NOT 使用任何 Flask session / cookie。请求体、查询字符串或请求头中另行携带的 class_id MUST 在解析后被丢弃；前端隐藏入口 MUST NOT 作为满足本要求的唯一手段。
 
 #### Scenario: 请求体 class_id 被丢弃
 
 - **WHEN** 以 A 班身份登录后，在 JSON 请求体中写入 B 班的 class_id
-- **THEN** 系统 MUST 仅使用会话中的 class_id
+- **THEN** 系统 MUST 仅使用令牌载荷中的 class_id
 - **AND** MySQL 与 Qdrant 两侧的过滤 MUST 均为 A 班
 - **AND** 结果中 MUST NOT 出现 B 班的切片
 
-#### Scenario: 两条路径均按会话班级过滤
+#### Scenario: 两条路径均按令牌身份班级过滤
 
 - **WHEN** 任何检索请求被处理
-- **THEN** MySQL 查询条件 MUST 含 class_id = 会话班级
+- **THEN** MySQL 查询条件 MUST 含 class_id = 令牌载荷班级
 - **AND** Qdrant 查询 MUST 含 class_id 过滤
 - **AND** 仅在单侧过滤 MUST NOT 视为满足隔离（即便向量库漏加过滤条件，回表时的班级约束 MUST 仍能排除他班记录）
 

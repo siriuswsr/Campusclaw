@@ -1,65 +1,124 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<title>CampusClaw — 材料详情</title>
+{% extends "base.html" %}
+{% block title %}CampusClaw — 材料详情{% endblock %}
+
+{% block styles %}
 <style>
-  :root { --pkured: #94070A; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font-family: -apple-system, "Segoe UI", "PingFang SC", sans-serif; background: #f5f5f7; }
-  header { background: #fff; border-bottom: 1px solid #e5e5e5; padding: 14px 24px;
-           display: flex; justify-content: space-between; align-items: center; }
-  header h1 { margin: 0; font-size: 18px; color: var(--pkured); }
-  main { max-width: 960px; margin: 24px auto; padding: 0 24px; }
-  section { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 20px;
-            box-shadow: 0 1px 6px rgba(0,0,0,.06); }
-  h2 { margin: 0 0 14px; font-size: 15px; border-bottom: 2px solid var(--pkured); padding-bottom: 6px; }
   .meta { font-size: 13px; color: #666; margin-bottom: 16px; }
   .meta span { margin-right: 18px; }
-  a { color: var(--pkured); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .btn { display: inline-block; padding: 9px 20px; background: var(--pkured); color: #fff;
-         border-radius: 4px; font-size: 14px; }
-  .btn:hover { text-decoration: none; background: #7b0508; }
-  .empty { color: #999; padding: 28px; text-align: center; font-size: 15px; }
   pre.body { margin: 0; padding: 14px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;
              font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
              max-height: 460px; overflow: auto; font-family: inherit; color: #333; }
 </style>
-</head>
-<body>
-<header>
-  <h1>CampusClaw · 材料详情</h1>
-  <div style="font-size:13px;color:#666;">
-    {{ user.username }}
-    &nbsp;|&nbsp;<a href="{{ url_for('materials.list_page') }}">返回列表</a>
-    &nbsp;|&nbsp;<a href="{{ url_for('auth.logout') }}">退出登录</a>
-  </div>
-</header>
+{% endblock %}
 
-<main>
-  <section>
-  {% if item %}
-    <h2>{{ item.title }}</h2>
-    <div class="meta">
-      <span>上传者：{{ item.uploader_name }}</span>
-      <span>上传时间：{{ item.created_at.strftime('%Y-%m-%d %H:%M:%S') if item.created_at else '' }}</span>
-    </div>
-    <a class="btn" href="{{ url_for('materials.download_api', mid=item.id) }}">下载 / 打开原文件</a>
-  {% else %}
-    <div class="empty">材料不存在或无权访问</div>
-    <p style="text-align:center;margin:6px 0 0;">
-      <a href="{{ url_for('materials.list_page') }}">返回材料列表</a>
-    </p>
-  {% endif %}
-  </section>
+{% block content %}
+<h1 class="page-title">材料详情</h1>
 
-  {% if body %}
-  <section>
-    <h2>材料正文</h2>
-    <pre class="body">{{ body }}</pre>
-  </section>
-  {% endif %}
-</main>
-</body>
-</html>
+<section class="card" id="detail-section">
+  <div class="empty" id="loading">加载中…</div>
+</section>
+<section class="card" id="body-section" style="display:none;">
+  <h2>材料正文</h2>
+  <pre class="body" id="body-text"></pre>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* Detail page shell: the id is fetched with the Bearer token, so cross-class and
+   nonexistent materials surface as the SAME 404 → identical 「材料不存在或无权访问」. */
+(function () {
+  if (!CCAuth.guard()) return;
+
+  var MID = {{ mid }};
+  var LIST_PAGE = "{{ url_for('materials.list_page') }}";                  // 学生：讲义与检索
+  var TEACHER_LIST_PAGE = "{{ url_for('pages.teacher_materials') }}";      // 教师：讲义管理
+  var GET_TPL = "{{ url_for('materials.get_api', mid=0) }}";            // /materials/api/0
+  var DL_TPL = "{{ url_for('materials.download_api', mid=0) }}";        // /materials/api/0/download
+  var user = CCAuth.user() || {};
+
+  function $(id) { return document.getElementById(id); }
+
+  function backPage() {
+    return user.role === 'teacher' ? TEACHER_LIST_PAGE : LIST_PAGE;
+  }
+
+  function fmtDate(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    if (isNaN(d.getTime())) return String(v);
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' '
+         + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  }
+
+  function notFound() {
+    var box = $('detail-section');
+    box.textContent = '';
+    var d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = '材料不存在或无权访问';
+    box.appendChild(d);
+    var p = document.createElement('p');
+    p.style.textAlign = 'center';
+    p.style.margin = '6px 0 0';
+    var a = document.createElement('a');
+    a.href = backPage();
+    a.textContent = '返回材料列表';
+    p.appendChild(a);
+    box.appendChild(p);
+  }
+
+  function render(item) {
+    var box = $('detail-section');
+    box.textContent = '';
+
+    var h = document.createElement('h2');
+    h.textContent = item.title;
+    box.appendChild(h);
+
+    var meta = document.createElement('div');
+    meta.className = 'meta';
+    [['上传者：', item.uploader_name || ''], ['上传时间：', fmtDate(item.created_at)]]
+      .forEach(function (pair) {
+        var s = document.createElement('span');
+        s.textContent = pair[0] + pair[1];
+        meta.appendChild(s);
+      });
+    box.appendChild(meta);
+
+    // 下载必须带 Bearer 头，所以走 authFetch 取 blob 而不是普通链接
+    var btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.type = 'button';
+    btn.textContent = '下载 / 打开原文件';
+    btn.addEventListener('click', function () {
+      CCAuth.download(DL_TPL.replace(/\/0\/download$/, '/' + MID + '/download'),
+                      item.title || '')
+        .catch(function (e) {
+          if (String(e && e.message) === 'unauthorized') return;
+          alert('下载失败，请稍后重试');
+        });
+    });
+    box.appendChild(btn);
+
+    if (item.body_text) {
+      $('body-text').textContent = item.body_text;
+      $('body-section').style.display = '';
+    }
+  }
+
+  CCAuth.authFetch(GET_TPL.replace(/\/0$/, '/' + MID))
+    .then(function (r) {
+      if (r.status === 404) { notFound(); return null; }
+      if (r.status !== 200) throw new Error('load failed: ' + r.status);
+      return r.json();
+    })
+    .then(function (item) { if (item) render(item); })
+    .catch(function (e) {
+      if (String(e && e.message) === 'unauthorized') return;
+      $('loading').textContent = '材料加载失败，请稍后重试';
+    });
+})();
+</script>
+{% endblock %}

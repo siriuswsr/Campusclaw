@@ -4,7 +4,7 @@ Goals:
 上传成功后，正文被切分为切片并写入 knowledge_chunks，每条切片对应一条 Qdrant 向量（主键一致）。
 学生与教师均可对本班材料做 keyword / vector / hybrid 检索，命中结果可回溯至材料标题、切片序号与原文摘录。
 POST /api/ask 仅在有本班命中切片时调用对话网关，回答带 [n] 出处标注；无命中返回固定文案、不调用模型。
-班级标识仅从会话读取，关键字与向量两条路径均按会话班级过滤；跨班检索对外表现为无命中。
+班级标识仅从服务端已校验的令牌身份读取（`Authorization: Bearer` 的 JWT 载荷），关键字与向量两条路径均按该班级过滤；跨班检索对外表现为无命中。
 Compose 一键启动；Qdrant 不可用时 keyword 仍可用，vector/hybrid 返回 503。
 Non-Goals:
 见 proposal.md Non-goals（流式输出、重排序、编排框架、向量库暴露、前端替代服务端隔离等）。
@@ -37,7 +37,7 @@ Go 服务自行完成切分、嵌入与检索，便于按规约逐条验收
 
 模块划分（在既有服务上扩展）
 internal/
-  auth/        # 第3课已有：登录会话、login_required、班级写入请求上下文
+  auth/        # 第3课已有：JWT 登录（Bearer）、@require_auth、班级写入请求上下文
   materials/   # 第3课已有：材料列表、按ID访问、上传入库（materials + knowledge_entries 同事务）
   chunk/       # 新增：切分模块（auto/custom/hierarchy、预处理、偏移计算）
   embed/       # 新增：嵌入模块（文本→向量，调用课程网关）
@@ -81,9 +81,9 @@ Qdrant 不可用：keyword 仍返回结果；vector/hybrid 返回 503；不编�
 POST /api/ask：以混合模式取本班前 4 条切片；无候选 → 直接返回固定文案，不调用对话网关；有候选 → 对话模块收到材料标题、切片序号、切片正文、用户最新一句提问与此前对话；客户端注入的 system 消息丢弃，system 由服务端写入。
 
 检索侧班级隔离
-认证模块按 Cookie 将用户写入请求上下文（第 3 课已有）。
+认证模块通过 `@require_auth` 解码 `Authorization: Bearer` 的 JWT，把身份写入请求上下文（第 3 课已有，无 session/cookie）。
 检索模块只从该上下文读取 class_id；查询字符串、JSON 正文、请求头中另行携带的 class_id 在解析后一律丢弃。
-关键字路径：WHERE class_id = 会话班级 AND index_status = 'ready'。
+关键字路径：WHERE class_id = 令牌载荷班级 AND index_status = 'ready'。
 向量路径：Qdrant 查询带 class_id 过滤；返回主键后再用同一班级条件回 MySQL 取正文。
 跨班级检索对外表现为 HTTP 200 空 hits（或固定文案），不以 403/404 暗示资料归属；按材料标识打开详情沿用第 3 课规则（跨班与不存在同构 404）。
 
