@@ -31,6 +31,18 @@ services:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
 
+  # 自建 MCP 工具服务器（提示词 A）：与主应用同仓、同一 compose 网络。
+  # 主应用通过 http://mcp-demo:8090 真实连接；令牌只从 .env 注入运行时，
+  # 不进 Dockerfile / 镜像层 / 前端。
+  mcp-demo:
+    build: ./mcp-server
+    container_name: campusclaw-mcp-demo
+    environment:
+      MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:-}"
+    ports:
+      - "${MCP_PORT:-8090}:8090"
+    restart: unless-stopped
+
   app:
     build: .
     image: campusclaw:latest
@@ -42,18 +54,31 @@ services:
       MYSQL_PASSWORD: "${MYSQL_PASSWORD:-campus}"
       MYSQL_DATABASE: "${MYSQL_DATABASE:-campusclaw}"
       QDRANT_URL: http://qdrant:6333
-      EMBEDDING_URL: "${EMBEDDING_URL:-http://host.docker.internal:8001/v1}"
-      EMBEDDING_KEY: "${EMBEDDING_KEY:-sk-mock}"
-      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-text-embedding-3-small}"
-      EMBEDDING_DIM: "${EMBEDDING_DIM:-1536}"
-      QA_URL: "${QA_URL:-http://host.docker.internal:8001/v1}"
-      QA_KEY: "${QA_KEY:-sk-mock}"
-      QA_MODEL: "${QA_MODEL:-gpt-4o-mini}"
-      SECRET_KEY: "${SECRET_KEY:-campusclaw-dev-secret}"
-      SESSION_SECRET: "${SESSION_SECRET:-campusclaw-dev-secret}"
+      EMBEDDING_BASE_URL: "${EMBEDDING_BASE_URL:-https://ai-gateway.devops.hello1023.com/v1}"
+      EMBEDDING_API_KEY: "${EMBEDDING_API_KEY:-}"
+      EMBEDDING_MODEL: "${EMBEDDING_MODEL:-course-embedding}"
+      EMBEDDING_DIM: "${EMBEDDING_DIM:-2048}"
+      QA_URL: "${QA_URL:-https://ai-gateway.devops.hello1023.com/v1}"
+      QA_KEY: "${QA_KEY:-}"
+      QA_MODEL: "${QA_MODEL:-course-chat}"
+      CHAT_BASE_URL: "${CHAT_BASE_URL:-https://ai-gateway.devops.hello1023.com/v1}"
+      CHAT_API_KEY: "${CHAT_API_KEY:-}"
+      CHAT_MODEL: "${CHAT_MODEL:-course-chat}"
+      JWT_SECRET: "${JWT_SECRET:-campusclaw-dev-jwt-secret}"
       UPLOAD_DIR: /app/uploads
+      # apitest 的 MCP 用例需要向 mcp-demo 出示同一枚令牌；仅服务端环境变量，
+      # 不进前端、不进镜像层。
+      MCP_AUTH_TOKEN: "${MCP_AUTH_TOKEN:-}"
     volumes:
       - ./uploads:/app/uploads
+      # LLM 流量日志（logs/ 已 gitignore）：落在仓库里，宿主机可直接查看。
+      - ./logs:/app/logs
+      # 只读挂入测试与评测脚本：MySQL/Qdrant 只在 compose 网络内可达，
+      # 宿主机连不上库，所以 `make check` / `make eval` 在容器内执行。
+      - ./tests:/app/tests:ro
+      - ./eval:/app/eval:ro
+      # apitest 需要写 HTML 报告（report/），因此是读写挂载；report/ 已 gitignore。
+      - ./apitest:/app/apitest
     ports:
       - "${APP_PORT:-8080}:8080"
     depends_on:
