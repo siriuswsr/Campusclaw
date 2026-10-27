@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}CampusClaw — 作业与改分{% endblock %}
+
+{% block styles %}
+<style>
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tab { padding: 6px 16px; border: 1px solid #d0d0d0; background: #fafafa;
+         border-radius: 6px; cursor: pointer; font-size: 13px; color: #444; }
+  .tab.active { background: var(--pkured); color: #fff; border-color: var(--pkured); }
+
+  .asg-block { margin-bottom: 20px; }
+  .asg-block > .head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 6px;
+                       border-bottom: 1px solid #f0f0f0; }
+  .asg-block > .head .t { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+  .asg-block > .head .subj { font-size: 12px; color: var(--pkured); border: 1px solid #e7b8ba;
+                             border-radius: 10px; padding: 1px 8px; }
+  .asg-block > .head .dl { margin-left: auto; font-size: 12px; color: #999; flex: none; }
+
+  .sub { padding: 12px 0; border-bottom: 1px dashed #f0f0f0; }
+  .sub:last-child { border-bottom: none; }
+  .sub .top { display: flex; align-items: center; gap: 10px; }
+  .sub .name { font-size: 14px; color: #222; font-weight: 600; }
+  .sub .scores { margin-left: auto; font-size: 13px; color: #555; flex: none; }
+  .sub .scores .ai { color: #777; }
+  .sub .scores .fin { font-weight: 700; color: var(--pkured); }
+  .sub .ans { margin-top: 6px; font-size: 13px; color: #555; white-space: pre-wrap;
+              max-height: 60px; overflow: hidden; }
+  .sub .cmt { margin-top: 6px; font-size: 12px; color: #777; line-height: 1.6; }
+
+  .pill { display: inline-block; font-size: 12px; border-radius: 10px; padding: 2px 10px; flex: none; }
+  .st-progress { background: #fff7e6; color: #b26a00; border: 1px solid #ffd591; }
+  .st-done     { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+  .st-failed   { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">📝 作业与改分</h1>
+<p class="page-sub">查看本班提交，AI 已给出分数，教师可覆盖终评。仅本班可见。</p>
+
+<div class="msg err" id="denied" style="display:none;">仅教师可访问本页</div>
+
+<div id="grading-body">
+  <div class="tabs" id="subject-tabs"></div>
+
+  <section class="card">
+    <h2>本班提交</h2>
+    <div id="grading-list"><div class="empty">加载中…</div></div>
+    <div class="empty" id="grading-empty" style="display:none;">该学科暂无作业</div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.CC_TEACHER_GRADING = {
+  assignmentsApi: "{{ url_for('assignments.list_assignments') }}",
+  submissionsApi: "{{ url_for('submissions.list_submissions') }}",
+  gradeTpl:       "{{ url_for('assignments.override_grade', sid=0) }}",
+  subjects: [
+    { code: "math",      label: "数学" },
+    { code: "chinese",   label: "语文" },
+    { code: "english",   label: "英语" },
+    { code: "physics",   label: "物理" },
+    { code: "chemistry", label: "化学" }
+  ]
+};
+</script>
+<script src="{{ url_for('static', filename='teacher_grading.js') }}"></script>
+{% endblock %}

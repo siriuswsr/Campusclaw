@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}CampusClaw — 交作业{% endblock %}
+
+{% block styles %}
+<style>
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tab { padding: 6px 16px; border: 1px solid #d0d0d0; background: #fafafa;
+         border-radius: 6px; cursor: pointer; font-size: 13px; color: #444; }
+  .tab.active { background: var(--pkured); color: #fff; border-color: var(--pkured); }
+
+  .asg { padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
+  .asg:last-child { border-bottom: none; }
+  .asg .h { display: flex; align-items: center; gap: 10px; }
+  .asg .t { font-size: 15px; font-weight: 600; color: #1a1a1a; }
+  .asg .subj { font-size: 12px; color: var(--pkured); border: 1px solid #e7b8ba;
+               border-radius: 10px; padding: 1px 8px; }
+  .asg .dl { margin-left: auto; font-size: 12px; color: #999; flex: none; }
+  .asg .b { margin: 8px 0 10px; font-size: 13px; color: #555; line-height: 1.6;
+            max-height: 46px; overflow: hidden; }
+
+  .q { background: #fafafa; border: 1px solid #eee; border-radius: 8px;
+       padding: 12px; font-size: 14px; color: #333; white-space: pre-wrap; }
+  #answer-text { width: 100%; min-height: 110px; margin: 12px 0; padding: 12px;
+                 resize: vertical; border: 1px solid #d0d0d0; border-radius: 8px;
+                 font-size: 14px; font-family: inherit; line-height: 1.6; box-sizing: border-box; }
+
+  .sub-row { padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+  .sub-row:last-child { border-bottom: none; }
+  .sub-row .top { display: flex; align-items: center; gap: 10px; }
+  .sub-row .t { font-size: 14px; color: #222; }
+  .sub-row .score { margin-left: auto; font-weight: 700; color: var(--pkured); flex: none; }
+  .sub-row .cmt { margin-top: 6px; font-size: 12px; color: #777; line-height: 1.6; }
+
+  .pill { display: inline-block; font-size: 12px; border-radius: 10px; padding: 2px 10px; flex: none; }
+  .st-progress { background: #fff7e6; color: #b26a00; border: 1px solid #ffd591; }
+  .st-done     { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+  .st-failed   { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">📤 交作业</h1>
+<p class="page-sub">提交后作业会进入异步批改队列：处理中 → 已完成，助手给出分数与评语。</p>
+
+<div class="tabs" id="subject-tabs"></div>
+
+<section class="card">
+  <h2>待交作业</h2>
+  <div id="assignment-list"><div class="empty">加载中…</div></div>
+  <div class="empty" id="assignment-empty" style="display:none;">该学科暂无待交作业</div>
+</section>
+
+<section class="card" id="submit-form" style="display:none;">
+  <h2 id="assignment-title"></h2>
+  <div class="q" id="assignment-body"></div>
+  <textarea id="answer-text" placeholder="请输入你的作答（纯文本）"></textarea>
+  <div>
+    <button type="button" class="btn" id="submit-btn">提交</button>
+    <button type="button" class="link-btn" id="cancel-btn">取消</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>我的提交</h2>
+  <div id="submission-list"><div class="empty">加载中…</div></div>
+  <div class="empty" id="submission-empty" style="display:none;">暂无提交记录</div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.CC_STUDENT_HOMEWORK = {
+  assignmentsApi: "{{ url_for('assignments.list_assignments') }}",
+  submissionsApi: "{{ url_for('submissions.list_submissions') }}",
+  submissionApi:  "{{ url_for('submissions.get_submission', sid=0) }}",
+  submitApi:      "{{ url_for('submissions.submit_homework') }}",
+  subjects: [
+    { code: "math",      label: "数学" },
+    { code: "chinese",   label: "语文" },
+    { code: "english",   label: "英语" },
+    { code: "physics",   label: "物理" },
+    { code: "chemistry", label: "化学" }
+  ]
+};
+</script>
+<script src="{{ url_for('static', filename='student_homework.js') }}"></script>
+{% endblock %}

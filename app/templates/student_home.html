@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}CampusClaw — 本班首页{% endblock %}
+
+{% block styles %}
+<style>
+  .recent { display: flex; align-items: center; gap: 10px; padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+  .recent:last-child { border-bottom: none; }
+  .recent .nm { color: #222; text-decoration: none; }
+  .recent .nm:hover { color: var(--pkured); text-decoration: underline; }
+  .recent .dt { margin-left: auto; font-size: 12px; color: #999; }
+  .quick-row { display: flex; gap: 10px; flex-wrap: wrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">本班首页</h1>
+<p class="page-sub" id="greet"></p>
+
+<div class="cards" style="margin-bottom: 20px;">
+  <div class="stat"><div class="n" id="stat-materials">—</div><div class="l">本班讲义</div></div>
+  <div class="stat"><div class="n" id="stat-updated" style="font-size: 17px;">—</div><div class="l">最近更新</div></div>
+  <div class="stat"><div class="n" id="stat-assistants">5</div><div class="l">学科助手</div></div>
+</div>
+
+<section class="card">
+  <h2>最近讲义</h2>
+  <div id="recent"></div>
+  <div class="empty" id="recent-empty" style="display:none;">本班暂无讲义</div>
+</section>
+
+<section class="card">
+  <h2>快速开始</h2>
+  <div class="quick-row" id="quick"></div>
+  <p class="hint">提示：可以先去「讲义与检索」找资料，再到「助手对话」就本学科提问。</p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.CC_STUDENT_HOME = {
+  listApi:    "{{ url_for('materials.list_api') }}",           /* GET /materials/api（按 token 的班级过滤） */
+  detailTpl:  "{{ url_for('materials.detail_page', mid=0) }}",
+  materials:  "{{ url_for('materials.list_page') }}",
+  chat:       "{{ url_for('student_assistant') }}"
+};
+</script>
+<script src="{{ url_for('static', filename='student_home.js') }}"></script>
+{% endblock %}

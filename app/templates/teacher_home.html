@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}CampusClaw — 本班首页{% endblock %}
+
+{% block styles %}
+<style>
+  .recent { display: flex; align-items: center; gap: 10px; padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+  .recent:last-child { border-bottom: none; }
+  .recent .nm { color: #222; text-decoration: none; }
+  .recent .nm:hover { color: var(--pkured); text-decoration: underline; }
+  .recent .dt { margin-left: auto; font-size: 12px; color: #999; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { padding: 6px 14px; border: 1px solid #d0d0d0; background: #fafafa; border-radius: 16px;
+          font-size: 13px; color: #444; text-decoration: none; }
+  .chip:hover { border-color: var(--pkured); color: var(--pkured); }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">本班首页</h1>
+<p class="page-sub" id="greet"></p>
+
+<div class="msg err" id="denied" style="display:none;">仅教师可访问本页</div>
+
+<div id="home-body">
+  <div class="cards" style="margin-bottom: 20px;">
+    <div class="stat"><div class="n">5</div><div class="l">学科助手</div></div>
+    <div class="stat"><div class="n" id="stat-materials">—</div><div class="l">本班讲义</div></div>
+    <div class="stat"><div class="n">2</div><div class="l">MCP 已连接</div></div>
+    <div class="stat"><div class="n" id="stat-skills">—</div><div class="l">已开启技能</div></div>
+  </div>
+
+  <section class="card">
+    <h2>最近上传</h2>
+    <div id="recent"></div>
+    <div class="empty" id="recent-empty" style="display:none;">本班暂无讲义</div>
+  </section>
+
+  <section class="card">
+    <h2>各学科助手</h2>
+    <div class="chips" id="subjects"></div>
+    <p class="hint">选择学科后可以编辑其提示词、技能与 MCP 绑定；
+      <a href="{{ url_for('teacher_assistant_config') }}">前往助手配置 →</a>
+    </p>
+  </section>
+
+  <p class="hint">切换到学生账号登录，可验证跨班隔离与学生端只读技能。</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.CC_TEACHER_HOME = {
+  listApi:    "{{ url_for('materials.list_api') }}",           /* GET /materials/api（按 token 的班级过滤） */
+  skillsApi:  "{{ url_for('assistant.list_skills') }}",        /* GET /api/assistant/skills（仅教师） */
+  detailTpl:  "{{ url_for('materials.detail_page', mid=0) }}",
+  materials:  "{{ url_for('pages.teacher_materials') }}",
+  config:     "{{ url_for('teacher_assistant_config') }}",
+  subjects: [
+    { code: "math",      label: "数学" },
+    { code: "chinese",   label: "语文" },
+    { code: "english",   label: "英语" },
+    { code: "physics",   label: "物理" },
+    { code: "chemistry", label: "化学" }
+  ]
+};
+</script>
+<script src="{{ url_for('static', filename='teacher_home.js') }}"></script>
+{% endblock %}

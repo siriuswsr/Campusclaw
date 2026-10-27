@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}CampusClaw — 错题{% endblock %}
+
+{% block styles %}
+<style>
+  .wrong { padding: 16px 0; border-bottom: 1px solid #f0f0f0; }
+  .wrong:last-child { border-bottom: none; }
+  .wrong .h { display: flex; align-items: center; gap: 10px; }
+  .wrong .subj { font-size: 12px; color: var(--pkured); border: 1px solid #e7b8ba;
+                 border-radius: 10px; padding: 1px 8px; }
+  .wrong .st { margin-left: auto; font-size: 12px; color: #999; flex: none; }
+  .wrong .q { margin: 10px 0 6px; font-size: 14px; color: #1a1a1a; line-height: 1.6; }
+  .wrong .a { font-size: 13px; color: #555; }
+  .wrong .a b { color: #b71c1c; font-weight: 600; }
+  .wrong .reason { margin-top: 8px; font-size: 12px; color: #b26a00;
+                   background: #fff7e6; border: 1px solid #ffd591; border-radius: 6px; padding: 6px 10px; }
+  .explain { margin-top: 10px; padding: 12px; border: 1px solid #e2e2e2; border-radius: 8px;
+             background: #fafafa; font-size: 13px; line-height: 1.75; color: #333;
+             white-space: pre-wrap; }
+  .explain .loading { color: #999; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">❗ 错题</h1>
+<p class="page-sub">判错的题目会进入这里，可请「错题讲解」技能按错因说明（默认不直接给答案）。</p>
+
+<section class="card">
+  <h2>我的错题</h2>
+  <div id="wrong-list"><div class="empty">加载中…</div></div>
+  <div class="empty" id="wrong-empty" style="display:none;">暂无错题</div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.CC_STUDENT_WRONG = {
+  listApi:     "{{ url_for('wrong.list_wrong') }}",            /* GET /api/wrong（只看本人） */
+  explainTpl:  "{{ url_for('wrong.explain_wrong', wid=0) }}",  /* POST /api/wrong/<id>/explain */
+  subjects: [
+    { code: "math",      label: "数学" },
+    { code: "chinese",   label: "语文" },
+    { code: "english",   label: "英语" },
+    { code: "physics",   label: "物理" },
+    { code: "chemistry", label: "化学" }
+  ]
+};
+</script>
+<script src="{{ url_for('static', filename='student_wrong.js') }}"></script>
+{% endblock %}
