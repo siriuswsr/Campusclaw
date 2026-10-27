@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}CampusClaw — 智能体管理{% endblock %}
+
+{% block styles %}
+<style>
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  /* 页签：学生 / 资料 跳到对应页面，智能体 / 技能 / MCP 在本页切换 */
+  .tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 16px; }
+  .tabs .tab {
+    padding: 7px 18px; border: 1px solid #ddd; border-radius: 8px; background: #fff;
+    color: #555; font-size: 14px; cursor: pointer; text-decoration: none; font-family: inherit;
+  }
+  .tabs .tab:hover { border-color: var(--pkured); color: var(--pkured); }
+  .tabs .tab.active { background: var(--pkured); border-color: var(--pkured); color: #fff; }
+  .tabs .tab.active:hover { color: #fff; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* 列表行 */
+  .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+  .row:last-child { border-bottom: none; }
+  .row .name { font-weight: 600; color: #222; }
+  .row .dim { color: #999; font-size: 12px; }
+  .row .spacer { flex: 1; }
+  .badge { font-size: 12px; padding: 2px 10px; border-radius: 10px; border: 1px solid #a5d6a7;
+           background: #e8f5e9; color: var(--green); }
+  .badge.off { border-color: #e0c0c0; background: #fbeaea; color: #b71c1c; }
+  .badge.warn { border-color: #f0d9a8; background: #fff8e1; color: #8d6e00; }
+  .btn { padding: 6px 14px; border: 1px solid #d0d0d0; background: #fff; border-radius: 6px;
+         cursor: pointer; font-size: 13px; color: #444; }
+  .btn.primary { background: var(--pkured); border-color: var(--pkured); color: #fff; }
+  .btn.danger { color: #b71c1c; border-color: #e0b4b4; }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.block { display: block; width: 100%; padding: 11px 0; font-size: 15px; }
+
+  /* 表单 */
+  label { display: block; font-size: 13px; color: #444; margin-bottom: 12px; }
+  input[type=text], textarea { width: 100%; padding: 10px 12px; border: 1px solid #d0d0d0;
+    border-radius: 6px; font-size: 14px; font-family: inherit; box-sizing: border-box; }
+  textarea { resize: vertical; min-height: 120px; line-height: 1.6; }
+  #agent-prompt { min-height: 140px; }
+  .char-count { text-align: right; font-size: 12px; color: #999; margin: -8px 0 12px; }
+  .inline { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #333; }
+
+  /* 多选 checkbox 组 */
+  fieldset { border: 1px solid #eee; border-radius: 6px; margin: 0 0 14px; padding: 12px; }
+  legend { font-size: 13px; color: #555; padding: 0 6px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+  .checks label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; color: #333; }
+
+  .row-right { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 4px; }
+  .row-right .saved { font-size: 13px; color: var(--green); }
+
+  /* MCP 服务器条目 */
+  .mcp-item { background: #fff; border-radius: 12px; padding: 16px 18px; margin-bottom: 12px;
+              box-shadow: 0 1px 6px rgba(0,0,0,.06); }
+  .mcp-item .mcp-name { font-size: 15px; font-weight: 600; color: #222; }
+  .mcp-item .mcp-url { margin: 6px 0 12px; font-size: 13px; color: #8a8a8a; }
+  .mcp-item .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mcp-tools { margin-top: 12px; padding: 10px 12px; background: #fafafa; border-radius: 8px;
+               font-size: 13px; color: #444; }
+  .mcp-tools .tool { padding: 3px 0; }
+  .mcp-tools .tool b { color: var(--pkured); }
+  .mcp-tools .tool span { color: #888; }
+
+  /* 审计表 */
+  .audit { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .audit th, .audit td { text-align: left; padding: 9px 8px; border-bottom: 1px solid #f0f0f0; }
+  .audit th { color: #888; font-weight: 500; }
+  .audit td { color: #333; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">助手配置</h1>
+<p class="page-sub">管理本班辅导智能体、技能文件与 MCP 工具服务器。学生端只看到「启用中」的智能体，提问时按绑定的技能路由作答。</p>
+
+<div class="msg err" id="denied" style="display:none;">仅教师可访问本页</div>
+
+<div id="config-body">
+  <!-- 页签：学生 / 资料 是其它页面，智能体 / 技能 / MCP 在本页切换 -->
+  <div class="tabs" id="config-tabs">
+    <a class="tab" href="{{ url_for('pages.teacher_home') }}">学生</a>
+    <a class="tab" href="{{ url_for('pages.teacher_materials') }}">资料</a>
+    <button type="button" class="tab active" data-tab="agent">智能体</button>
+    <button type="button" class="tab" data-tab="skill">技能</button>
+    <button type="button" class="tab" data-tab="mcp">MCP</button>
+  </div>
+
+  <!-- ============ 智能体 ============ -->
+  <div class="tab-panel active" id="panel-agent">
+    <div class="grid">
+      <!-- 左侧：智能体管理 -->
+      <section class="card">
+        <h2>智能体列表</h2>
+        <div id="agent-list"></div>
+        <div class="empty" id="agent-empty" style="display:none;">暂无智能体，请在右侧新建</div>
+      </section>
+
+      <!-- 右侧：新建/编辑智能体 -->
+      <section class="card">
+        <h2 id="agent-form-title">新建智能体</h2>
+        <div class="msg err" id="agent-msg" style="display:none;"></div>
+
+        <label>名称
+          <input type="text" id="agent-name" maxlength="64" placeholder="如：数学解题助手">
+        </label>
+
+        <label>角色提示词（2000 字上限）</label>
+        <textarea id="agent-prompt" maxlength="2000" placeholder="写给智能体的角色设定…"></textarea>
+        <div class="char-count" id="agent-prompt-count">0 / 2000</div>
+
+        <label class="inline"><input type="checkbox" id="agent-enabled" checked> 启用</label>
+
+        <fieldset>
+          <legend>绑定技能（候选：本班 enabled 技能）</legend>
+          <div class="checks" id="agent-skills"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>绑定材料（候选：本班全部材料）</legend>
+          <div class="checks" id="agent-materials"></div>
+        </fieldset>
+
+        <div class="row-right">
+          <span class="saved" id="agent-saved" style="display:none;">已保存</span>
+          <button type="button" class="btn" id="agent-cancel" style="display:none;">取消</button>
+          <button type="button" class="btn primary" id="agent-save">保 存</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- ============ 技能 ============ -->
+  <div class="tab-panel" id="panel-skill">
+    <!-- 技能文件管理 -->
+    <section class="card">
+      <h2>技能文件管理</h2>
+      <div class="msg err" id="skill-msg" style="display:none;"></div>
+      <div id="skill-list"></div>
+      <div class="empty" id="skill-empty" style="display:none;">暂无技能文件，请在下方上传</div>
+    </section>
+
+    <!-- 上传/编辑技能文件 -->
+    <section class="card" style="margin-top:16px;">
+      <h2 id="skill-form-title">上传技能文件</h2>
+      <textarea id="skill-source" placeholder="粘贴技能文件全文（元数据区 + 空行 + 正文区）…"></textarea>
+      <div class="row-right">
+        <span class="saved" id="skill-saved" style="display:none;">已保存</span>
+        <button type="button" class="btn" id="skill-cancel" style="display:none;">取消</button>
+        <button type="button" class="btn primary" id="skill-save">提 交</button>
+      </div>
+      <p class="hint">文件格式：第一段是元数据（名称 / 适用条件 / 资料 / 工具 / 启用），空行之后是正文。工具支持 knowledge_search，或 MCP 引用「工具名@服务器名」（如 formula_hint@campus-tools；服务器需先在 MCP 页连接）。</p>
+    </section>
+  </div>
+
+  <!-- ============ MCP ============ -->
+  <div class="tab-panel" id="panel-mcp">
+    <p class="hint" style="margin:0 0 14px;">令牌只保存在服务端。技能文件里用「工具名@服务器名」绑定，例如 formula_hint@campus-tools。</p>
+
+    <div class="msg" id="mcp-msg" style="display:none;"></div>
+
+    <div id="mcp-servers"></div>
+    <div class="empty" id="mcp-empty" style="display:none;">暂无 MCP 服务器，请在下方登记</div>
+
+    <!-- 登记/编辑服务器 -->
+    <section class="card" style="margin-top:16px;">
+      <h2 id="mcp-form-title">登记 MCP 服务器</h2>
+
+      <label>服务器名称
+        <input type="text" id="mcp-name" maxlength="64" placeholder="如：campus-tools">
+      </label>
+      <label>Base URL
+        <input type="text" id="mcp-base" placeholder="http://mcp-demo:8090">
+      </label>
+      <label>Bearer 令牌（新建时必填，修改时留空表示不改）
+        <input type="text" id="mcp-token" autocomplete="off" placeholder="只保存在服务端，保存后不会回显">
+      </label>
+
+      <button type="button" class="btn block" id="mcp-save">登记服务器</button>
+      <div class="row-right" style="margin-top:10px;">
+        <span class="saved" id="mcp-saved" style="display:none;">已保存</span>
+        <button type="button" class="btn" id="mcp-cancel" style="display:none;">取消编辑</button>
+      </div>
+    </section>
+
+    <!-- 审计 -->
+    <section class="card">
+      <h2>最近工具调用</h2>
+      <div id="mcp-audit"></div>
+      <div class="empty" id="mcp-audit-empty" style="display:none;">尚无记录</div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* 接口地址 —— 外部 JS 读不到 Jinja，这里注入一次 */
+window.CC_ASSISTANT_CONFIG = {
+  agentsApi: "/api/agents",        /* GET/POST/PUT/DELETE */
+  skillsApi: "/api/skills",        /* GET/POST/PUT/DELETE（text/plain 上传） */
+  materialsApi: "/materials/api",  /* GET 本班全部材料 */
+  mcpApi: "/api/mcp"               /* GET/POST /servers、/tool-calls 等 */
+};
+</script>
+<script src="{{ url_for('static', filename='teacher_assistant_config.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>{% block title %}CampusClaw{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='shell.css') }}">
+{% block styles %}{% endblock %}
+</head>
+<body>
+<div class="app">
+  <!-- 侧栏的菜单内容由 nav.js 按 sessionStorage 里的 role 渲染：
+       服务端渲染页面时拿不到身份（页面是「200 空壳 + 客户端守卫」）。 -->
+  <aside class="sidebar">
+    <div class="brand">CampusClaw</div>
+    <nav class="nav" id="cc-nav"></nav>
+    <div class="me">
+      <span id="cc-who"></span>
+      <a href="#" id="cc-logout">退出登录</a>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="content-inner">
+      <!-- 右上角身份 + 登出：身份同样来自 sessionStorage，由 nav.js 填 -->
+      <div class="topbar">
+        <span class="who" id="cc-who-top"></span>
+        <button type="button" class="btn-logout" id="cc-logout-top">退出登录</button>
+      </div>
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='auth.js') }}"></script>
+<script>
+/* 外部 JS 读不到 Jinja，接口/页面地址在这里注入一次 */
+window.CC_NAV_URLS = {
+  studentHome:   "{{ url_for('pages.student_home') }}",
+  materials:     "{{ url_for('materials.list_page') }}",
+  studentChat:   "{{ url_for('student_assistant') }}",
+  studentHomework: "{{ url_for('pages.student_homework') }}",
+  studentWrong:    "{{ url_for('pages.student_wrong') }}",
+  teacherHome:   "{{ url_for('pages.teacher_home') }}",
+  teacherMats:   "{{ url_for('pages.teacher_materials') }}",
+  teacherGrading: "{{ url_for('pages.teacher_grading') }}",
+  teacherConfig: "{{ url_for('teacher_assistant_config') }}"
+};
+</script>
+<script src="{{ url_for('static', filename='nav.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

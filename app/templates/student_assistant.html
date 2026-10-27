@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}CampusClaw — 助手对话{% endblock %}
+
+{% block styles %}
+<style>
+  body { padding-bottom: 92px; /* 给底部固定输入框留位 */ }
+
+  /* ---- 左右两栏：左会话列表 + 右对话区 ---- */
+  .assistant-layout { display: flex; gap: 16px; align-items: flex-start; }
+  .chat-panel { flex: 1; min-width: 0; }
+
+  /* ---- 会话侧栏 ---- */
+  .session-panel { flex: 0 0 232px; width: 232px; padding: 0; position: sticky; top: 16px;
+                   max-height: calc(100vh - 170px); display: flex; flex-direction: column; }
+  .session-head { display: flex; align-items: center; justify-content: space-between;
+                  padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 14px; color: #444; }
+  .new-btn { border: 1px solid var(--pkured); background: #fff; color: var(--pkured);
+             border-radius: 6px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+  .new-btn:hover { background: var(--pkured); color: #fff; }
+  .new-btn:disabled { border-color: #ccc; color: #aaa; cursor: default; background: #fff; }
+  .session-list { overflow-y: auto; }
+  .s-item { padding: 9px 12px; border-bottom: 1px solid #f4f4f4; cursor: pointer; }
+  .s-item:hover { background: #fafafa; }
+  .s-item.active { background: #fff5f0; box-shadow: inset 3px 0 0 var(--pkured); }
+  .s-title { font-size: 13px; color: #333; line-height: 1.4;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .s-meta { font-size: 11px; color: #999; margin-top: 2px; }
+  .s-empty { padding: 14px 12px; font-size: 12px; color: #aaa; }
+
+  /* ---- 智能体 tab ---- */
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tab { padding: 7px 18px; border: 1px solid #d0d0d0; background: #fafafa; border-radius: 6px;
+         cursor: pointer; font-size: 14px; color: #444; }
+  .tab.active { background: var(--pkured); color: #fff; border-color: var(--pkured); }
+
+  /* ---- 消息列表 ---- */
+  #messages { min-height: 40vh; margin-top: 14px; }
+  .chat-empty { color: #aaa; font-size: 13px; padding: 24px 4px; }
+  .row { display: flex; margin-bottom: 14px; }
+  .row.user { justify-content: flex-end; }
+  .row.ai { justify-content: flex-start; }
+  .bubble { max-width: 78%; padding: 10px 14px; font-size: 14px; line-height: 1.65; word-break: break-word; }
+  .user-bubble { background: var(--blue); color: #fff; border-radius: 12px 12px 2px 12px; }
+  .ai-bubble { background: #fff; border: 1px solid #e2e2e2; color: #222;
+               border-radius: 12px 12px 12px 2px; }
+  .body { white-space: pre-wrap; }
+  .thinking { color: #999; }
+  .caret { display: inline-block; width: 7px; height: 14px; margin-left: 2px; vertical-align: -2px;
+           background: #bbb; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .err { color: #b71c1c; }
+
+  details.steps { margin-bottom: 8px; font-size: 12px; color: #777; }
+  details.steps summary { cursor: pointer; color: #999; outline: none; }
+  details.steps ol { margin: 6px 0 0; padding-left: 20px; line-height: 1.7; }
+
+  .sources { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #eee; font-size: 12px; color: #666; }
+  .sources .src { padding: 3px 0; }
+  .sources .no { color: var(--pkured); font-weight: 600; margin-right: 4px; }
+  .sources .sec { color: #aaa; margin-left: 6px; }
+
+  footer { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid #e5e5e5; }
+  .composer { padding: 12px 0; display: flex; gap: 10px; align-items: flex-end; }
+  .composer textarea { flex: 1; height: 46px; max-height: 120px; padding: 12px; resize: none;
+                       border: 1px solid #d0d0d0; border-radius: 8px; font-size: 14px;
+                       font-family: inherit; line-height: 1.4; }
+  .composer button { padding: 12px 24px; border: none; border-radius: 8px; background: var(--pkured);
+                     color: #fff; font-size: 14px; cursor: pointer; white-space: nowrap; }
+  .composer button:disabled { background: #cfcfcf; cursor: default; }
+
+  @media (max-width: 720px) {
+    .assistant-layout { flex-direction: column; }
+    .session-panel { flex-basis: auto; width: 100%; position: static; max-height: 200px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">助手对话</h1>
+<p class="page-sub">左侧是历史会话；点「＋ 新对话」会绑定当前智能体，切换 tab 后提问将面向该智能体。</p>
+
+<div class="assistant-layout">
+  <aside class="session-panel card">
+    <div class="session-head">
+      <span>会话</span>
+      <button type="button" id="new-session" class="new-btn">＋ 新对话</button>
+    </div>
+    <div id="session-list" class="session-list"></div>
+  </aside>
+
+  <section class="chat-panel">
+    <div class="tabs" id="agent-tabs"></div>
+    <div class="empty" id="agent-empty" style="display:none;">暂无可用智能体，请联系老师配置。</div>
+    <div id="messages"><div class="chat-empty" id="chat-empty">选择或新建一个会话，然后在下方输入问题。</div></div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<footer class="composer-bar">
+  <div class="composer content-inner">
+    <textarea id="input" placeholder="输入你的问题，Enter 发送 / Shift+Enter 换行"></textarea>
+    <button type="button" id="send">发 送</button>
+  </div>
+</footer>
+
+<script>
+/* 接口地址 —— 外部 JS 读不到 Jinja，这里注入一次 */
+window.CC_STUDENT_CONFIG = {
+  sessionsApi: "/api/sessions",   /* GET 列表 / POST 新建 / GET <id> 详情 / POST <id>/messages 流 */
+  agentsApi: "/api/agents"        /* GET 本班启用中的智能体 */
+};
+</script>
+<script src="{{ url_for('static', filename='student_assistant.js') }}"></script>
+{% endblock %}

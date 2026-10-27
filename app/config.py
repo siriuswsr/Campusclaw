@@ -17,8 +17,12 @@ def _int_env(name: str, default: int | None = None) -> int | None:
 
 class Config:
     # --- Flask ---
-    SECRET_KEY = os.environ.get("SECRET_KEY")
     UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
+
+    # --- JWT (no Flask session anywhere; identity travels in the token) ---
+    JWT_SECRET = os.environ.get("JWT_SECRET")
+    JWT_ALGORITHM = "HS256"
+    JWT_TTL_HOURS = _int_env("JWT_TTL_HOURS", 24)
 
     # --- MySQL ---
     MYSQL_HOST = os.environ.get("MYSQL_HOST", "mysql")
@@ -32,8 +36,10 @@ class Config:
     QDRANT_COLLECTION = os.environ.get("QDRANT_COLLECTION", "campusclaw_chunks")
 
     # --- Embedding gateway (OpenAI compatible /embeddings) ---
-    EMBEDDING_URL = os.environ.get("EMBEDDING_URL")
-    EMBEDDING_KEY = os.environ.get("EMBEDDING_KEY")
+    # 变量名对齐课程网关页面：EMBEDDING_BASE_URL 只写到 /v1（代码接 /embeddings），
+    # EMBEDDING_DIM 不是请求参数，用于建库与校验返回向量长度。
+    EMBEDDING_URL = os.environ.get("EMBEDDING_BASE_URL")
+    EMBEDDING_KEY = os.environ.get("EMBEDDING_API_KEY")
     EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL")
     EMBEDDING_DIM = _int_env("EMBEDDING_DIM")   # MUST be set — single source of truth
 
@@ -42,9 +48,22 @@ class Config:
     QA_KEY = os.environ.get("QA_KEY")
     QA_MODEL = os.environ.get("QA_MODEL")
 
+    # --- Assistant chat gateway (lesson 5) — OpenAI chat.completions, streamed ---
+    # CHAT_BASE_URL is the API ROOT (e.g. .../v1); the route is appended by
+    # chat_endpoint(). Key falls back to QA_KEY so one credential covers both.
+    CHAT_BASE_URL = os.environ.get(
+        "CHAT_BASE_URL", "https://ai-gateway.devops.hello1023.com/v1")
+    CHAT_API_KEY = os.environ.get("CHAT_API_KEY") or os.environ.get("QA_KEY")
+    CHAT_MODEL = os.environ.get("CHAT_MODEL", "course-chat")
+
     # --- RRF ---
     RRF_K = _int_env("RRF_K", 60)
     VECTOR_SCORE_THRESHOLD = float(os.environ.get("VECTOR_SCORE_THRESHOLD", "0.35"))
+
+    @classmethod
+    def chat_endpoint(cls) -> str:
+        """Full chat.completions URL built from CHAT_BASE_URL."""
+        return cls.CHAT_BASE_URL.rstrip("/") + "/chat/completions"
 
     @classmethod
     def mysql_dsn(cls) -> dict:
@@ -60,12 +79,12 @@ class Config:
     @classmethod
     def validate(cls):
         missing = []
-        if not cls.SECRET_KEY:
-            missing.append("SECRET_KEY")
+        if not cls.JWT_SECRET:
+            missing.append("JWT_SECRET")
         if not cls.EMBEDDING_URL:
-            missing.append("EMBEDDING_URL")
+            missing.append("EMBEDDING_BASE_URL")
         if not cls.EMBEDDING_KEY:
-            missing.append("EMBEDDING_KEY")
+            missing.append("EMBEDDING_API_KEY")
         if not cls.EMBEDDING_MODEL:
             missing.append("EMBEDDING_MODEL")
         if cls.EMBEDDING_DIM is None:
